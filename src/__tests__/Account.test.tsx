@@ -92,6 +92,17 @@ describe('вход по коду на email', () => {
     expect((await within(dialog).findByRole('alert')).textContent).toMatch(/Слишком много попыток/);
   });
 
+  it('без своего почтового сервиса объясняет, что вход временно недоступен', async () => {
+    const user = await renderApp();
+    await user.click(screen.getByRole('button', { name: 'Войти' }));
+    const dialog = screen.getByRole('dialog', { name: 'Аккаунт' });
+    await user.type(within(dialog).getByLabelText('Email'), 'outsider@example.com');
+    await user.click(within(dialog).getByRole('button', { name: 'Получить код' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toMatch(
+      /Вход в аккаунт сейчас работает в тестовом режиме и временно недоступен/
+    );
+  });
+
   it('выход возвращает кнопку «Войти»', async () => {
     const user = await renderApp();
     const dialog = await signIn(user);

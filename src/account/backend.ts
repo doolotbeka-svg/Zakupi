@@ -10,6 +10,8 @@ export type AccountErrorKind =
   | 'rate_limit'
   | 'invalid_code'
   | 'invalid_email'
+  /** Login is switched off or emails cannot be sent to this address yet (no own mail service) */
+  | 'unavailable'
   | 'forbidden'
   | 'network'
   | 'unknown';

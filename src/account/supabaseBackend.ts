@@ -19,11 +19,20 @@ export function toAccountUser(user: User | null | undefined): AccountUser | null
 export function describeAuthError(error: ErrorLike): AccountError {
   const code = error.code ?? '';
   const message = error.message ?? '';
+  // Exact error codes first, message text only as a fallback for older responses without a code
   if (error.status === 429 || code.includes('rate_limit')) return new AccountError('rate_limit', message);
-  if (code === 'otp_expired' || code === 'invalid_credentials' || /token has expired|invalid/i.test(message)) {
-    return new AccountError('invalid_code', message);
-  }
   if (code === 'email_address_invalid' || code === 'validation_failed') return new AccountError('invalid_email', message);
+  if (
+    code === 'email_address_not_authorized' ||
+    code === 'signup_disabled' ||
+    code === 'email_provider_disabled' ||
+    code === 'otp_disabled'
+  ) {
+    return new AccountError('unavailable', message);
+  }
+  if (code === 'otp_expired' || code === 'invalid_credentials') return new AccountError('invalid_code', message);
+  if (/not authorized/i.test(message)) return new AccountError('unavailable', message);
+  if (/token has expired|invalid/i.test(message)) return new AccountError('invalid_code', message);
   if (error.name === 'AuthRetryableFetchError' || /fetch|network/i.test(message)) return new AccountError('network', message);
   return new AccountError('unknown', message);
 }
