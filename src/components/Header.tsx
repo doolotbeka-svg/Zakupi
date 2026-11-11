@@ -46,9 +46,6 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {lang === 'ky' ? 'Тендер калькулятору' : 'Калькулятор тендеров'}
               </span>
-              <span className="hidden lg:inline text-xs font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-700/50 px-2 py-0.5 rounded">
-                zakupki.okmot.kg
-              </span>
             </div>
             <span className="text-xs text-slate-400 hidden xl:inline truncate max-w-md">
               {t.appSubtitle}
