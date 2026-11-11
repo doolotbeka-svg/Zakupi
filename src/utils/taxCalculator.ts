@@ -518,13 +518,14 @@ export function formatCurrency(
 ): string {
   // Amounts are stored in soms; RUB is shown at the manually entered rate
   const value = convertFromKgs(amount, currency);
-  if (!Number.isFinite(value)) return `0 ${currency}`;
+  if (!Number.isFinite(value)) return `0\u00a0${currency}`;
   const fixed = Math.abs(value).toFixed(decimals);
   const parts = fixed.split('.');
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  // Non-breaking spaces keep an amount on one line ("1 069 000 KGS" never wraps mid-number)
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
   // Never show a minus sign in front of a value that rounds to zero
   const sign = value < 0 && Number(fixed) !== 0 ? '−' : '';
-  return `${sign}${parts.join('.')} ${currency}`;
+  return `${sign}${parts.join('.')}\u00a0${currency}`;
 }
 
 export function formatPercent(value: number, decimals = 1): string {

@@ -13,6 +13,15 @@
   }
 }
 
+/* Touch screens: inputs below 16px make iOS Safari zoom the page on focus */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='range']),
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
 /* Custom scrollbars for clean financial tables */
 ::-webkit-scrollbar {
   width: 6px;
