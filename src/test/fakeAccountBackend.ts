@@ -11,6 +11,7 @@ export class FakeAccountBackend implements AccountBackend {
   saved = new Map<string, SavedTender[]>();
   sentCodes: string[] = [];
   failSaves = false;
+  failAccess = false;
   private listeners = new Set<(user: AccountUser | null) => void>();
 
   async getUser() {
@@ -42,6 +43,7 @@ export class FakeAccountBackend implements AccountBackend {
   }
 
   async getAccess(user: AccountUser | null): Promise<AccessInfo> {
+    if (this.failAccess) throw new AccountError('network');
     return user ? { ...this.access } : { ...this.access, paidUntil: null, plan: null };
   }
 

@@ -10,7 +10,11 @@ export interface AccountContextValue {
   user: AccountUser | null;
   /** The stored session has been checked */
   ready: boolean;
+  /** The site settings (paywall, login requirement) have been loaded or failed to load */
+  accessReady: boolean;
   access: AccessInfo;
+  /** The visitor has to log in before the calculator is shown */
+  mustSignIn: boolean;
   canUse: (feature: Feature) => boolean;
   /** True when the feature may be used; otherwise opens the account window explaining why. */
   requireFeature: (feature: Feature) => boolean;
@@ -34,7 +38,9 @@ const NO_ACCOUNTS: AccountContextValue = {
   backend: null,
   user: null,
   ready: true,
+  accessReady: true,
   access: OPEN_ACCESS,
+  mustSignIn: false,
   canUse: () => true,
   requireFeature: () => true,
   isAccountOpen: false,
@@ -60,6 +66,7 @@ export const AccountProvider: React.FC<{ backend: AccountBackend | null; childre
   const [user, setUser] = useState<AccountUser | null>(null);
   const [ready, setReady] = useState(!backend);
   const [access, setAccess] = useState<AccessInfo>(OPEN_ACCESS);
+  const [accessReady, setAccessReady] = useState(!backend);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [lockedFeature, setLockedFeature] = useState<Feature | null>(null);
   const accessRequest = useRef(0);
@@ -86,8 +93,11 @@ export const AccountProvider: React.FC<{ backend: AccountBackend | null; childre
       const info = await backend.getAccess(user);
       if (request === accessRequest.current) setAccess(info);
     } catch (error) {
-      // Keep the last known state; the database still enforces access to cloud data
+      // Keep the last known state; the database still enforces access to cloud data.
+      // If the settings never load, the calculator stays open rather than locking everyone out.
       console.error('Could not load the subscription', error);
+    } finally {
+      if (request === accessRequest.current) setAccessReady(true);
     }
   }, [backend, user]);
 
@@ -111,7 +121,9 @@ export const AccountProvider: React.FC<{ backend: AccountBackend | null; childre
       backend,
       user,
       ready,
+      accessReady,
       access,
+      mustSignIn: access.loginRequired && user === null,
       canUse,
       requireFeature: feature => {
         if (canUse(feature)) return true;
@@ -135,7 +147,7 @@ export const AccountProvider: React.FC<{ backend: AccountBackend | null; childre
       },
       refreshAccess
     };
-  }, [backend, user, ready, access, isAccountOpen, lockedFeature, refreshAccess]);
+  }, [backend, user, ready, accessReady, access, isAccountOpen, lockedFeature, refreshAccess]);
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 };

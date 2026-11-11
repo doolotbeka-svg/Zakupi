@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
+import Root from './Root';
 import { AccountProvider } from './account/AccountContext';
 import type { AccountBackend } from './account/backend';
 import './index.css';
@@ -22,7 +22,7 @@ async function loadAccountBackend(): Promise<AccountBackend | null> {
 loadAccountBackend().then(backend => {
   createRoot(document.getElementById('root')!).render(
     <AccountProvider backend={backend}>
-      <App />
+      <Root />
     </AccountProvider>
   );
 });

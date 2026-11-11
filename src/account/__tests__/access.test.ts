@@ -12,7 +12,7 @@ import {
 import { PREMIUM_FEATURES } from '../../config/plans';
 
 const now = new Date('2026-11-11T12:00:00Z');
-const paywall = (paidUntil: string | null) => ({ paywallEnabled: true, paidUntil, plan: null });
+const paywall = (paidUntil: string | null) => ({ paywallEnabled: true, loginRequired: false, paidUntil, plan: null });
 
 describe('subscriptionStatus / daysLeft', () => {
   it('различает активную, закончившуюся и отсутствующую подписку', () => {

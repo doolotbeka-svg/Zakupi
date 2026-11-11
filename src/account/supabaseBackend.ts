@@ -116,10 +116,16 @@ export function createSupabaseBackend(url: string, key: string, client?: Supabas
     },
 
     async getAccess(user): Promise<AccessInfo> {
-      const settings = await supabase.from('app_settings').select('paywall_enabled').maybeSingle();
+      let settings = await supabase.from('app_settings').select('paywall_enabled, login_required').maybeSingle();
+      // 42703: the login_required column is not created yet (older database schema) — treat it as off
+      if (settings.error?.code === '42703') {
+        settings = await supabase.from('app_settings').select('paywall_enabled').maybeSingle();
+      }
       if (settings.error) throw describeDbError(settings.error);
-      const paywallEnabled = settings.data?.paywall_enabled === true;
-      if (!user) return { paywallEnabled, paidUntil: null, plan: null };
+      const row = (settings.data ?? {}) as { paywall_enabled?: unknown; login_required?: unknown };
+      const paywallEnabled = row.paywall_enabled === true;
+      const loginRequired = row.login_required === true;
+      if (!user) return { paywallEnabled, loginRequired, paidUntil: null, plan: null };
 
       const subscription = await supabase
         .from('subscriptions')
@@ -129,6 +135,7 @@ export function createSupabaseBackend(url: string, key: string, client?: Supabas
       if (subscription.error) throw describeDbError(subscription.error);
       return {
         paywallEnabled,
+        loginRequired,
         paidUntil: typeof subscription.data?.paid_until === 'string' ? subscription.data.paid_until : null,
         plan: typeof subscription.data?.plan === 'string' ? subscription.data.plan : null
       };

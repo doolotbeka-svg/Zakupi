@@ -3,12 +3,14 @@ import { Feature, PREMIUM_FEATURES } from '../config/plans';
 export interface AccessInfo {
   /** Paid features are locked for users without an active subscription */
   paywallEnabled: boolean;
+  /** Signed-out visitors see only the introduction page until they log in */
+  loginRequired: boolean;
   /** ISO date the subscription is paid until, or null */
   paidUntil: string | null;
   plan: string | null;
 }
 
-export const OPEN_ACCESS: AccessInfo = { paywallEnabled: false, paidUntil: null, plan: null };
+export const OPEN_ACCESS: AccessInfo = { paywallEnabled: false, loginRequired: false, paidUntil: null, plan: null };
 
 export type SubscriptionStatus = 'active' | 'expired' | 'none';
 
