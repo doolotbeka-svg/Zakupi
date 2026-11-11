@@ -47,6 +47,8 @@ npm run dev
 | `npm run lint` | Проверяет типы TypeScript |
 | `npm test` | Запускает автотесты (Vitest) |
 
+На каждый pull request и push в `main` GitHub Actions автоматически проверяет типы, запускает тесты и сборку (`.github/workflows/ci.yml`).
+
 ## Технологии
 
 React 19, TypeScript, Vite, Tailwind CSS 4, SheetJS (`xlsx`) для работы с Excel, иконки `lucide-react`, тесты на Vitest.
