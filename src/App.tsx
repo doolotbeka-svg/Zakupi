@@ -10,6 +10,8 @@ import { calculateTender } from './utils/taxCalculator';
 import {
   DEFAULT_DISCOUNT,
   MAX_DISCOUNT,
+  MAX_SAVED_TENDERS,
+  findSavedByTitle,
   removeSavedTender,
   sanitizeDiscount,
   sanitizeItems,
@@ -28,6 +30,8 @@ import { FinancialLedger } from './components/FinancialLedger';
 import { TemplatesModal } from './components/TemplatesModal';
 import { PrintModal } from './components/PrintModal';
 import { SavedTendersModal } from './components/SavedTendersModal';
+import { AccountModal } from './components/AccountModal';
+import { useAccount } from './account/AccountContext';
 
 const STORAGE_KEY_PARAMS = 'kg_tender_calc_params_v1';
 const STORAGE_KEY_ITEMS = 'kg_tender_calc_items_v1';
@@ -117,8 +121,11 @@ export default function App() {
     return DEFAULT_DISCOUNT; // 5% default realistic drop
   });
 
-  // Saved calculations (several tenders kept side by side)
-  const [savedTenders, setSavedTenders] = useState<SavedTender[]>(() => {
+  const account = useAccount();
+
+  // Saved calculations (several tenders kept side by side).
+  // Signed-out visitors keep them in this browser; signed-in users with access keep them in their account.
+  const [guestTenders, setGuestTenders] = useState<SavedTender[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SAVED);
       if (saved) return sanitizeSavedTenders(JSON.parse(saved));
@@ -207,13 +214,69 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_SAVED, JSON.stringify(savedTenders));
+      localStorage.setItem(STORAGE_KEY_SAVED, JSON.stringify(guestTenders));
       setSavedStorageFailed(false);
     } catch {
       // Storage is full or unavailable: the list lives only until the page is closed
       setSavedStorageFailed(true);
     }
-  }, [savedTenders]);
+  }, [guestTenders]);
+
+  // Account storage for saved calculations
+  const cloudUser = account.user && account.canUse('savedTenders') ? account.user : null;
+  const cloudBackend = account.backend;
+  const [cloudTenders, setCloudTenders] = useState<SavedTender[] | null>(null);
+  const savedTenders = cloudUser ? cloudTenders ?? [] : guestTenders;
+
+  const guestTendersRef = useRef(guestTenders);
+  guestTendersRef.current = guestTenders;
+
+  // On sign-in: load the account's calculations and move the ones saved in this browser into it
+  useEffect(() => {
+    if (!cloudUser || !cloudBackend) {
+      setCloudTenders(null);
+      return;
+    }
+    let cancelled = false;
+    const ky = lang === 'ky';
+    (async () => {
+      let remote: SavedTender[] = [];
+      try {
+        remote = await cloudBackend.listSaved(cloudUser);
+        const guest = guestTendersRef.current;
+        // Same title already in the account: the account copy wins
+        const toMove = guest
+          .filter(tender => !findSavedByTitle(remote, tender.title))
+          .slice(0, Math.max(0, MAX_SAVED_TENDERS - remote.length));
+        for (const tender of toMove) {
+          await cloudBackend.saveTender(cloudUser, tender);
+        }
+        if (cancelled) return;
+        if (toMove.length > 0) {
+          remote = [...toMove, ...remote].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        }
+        setCloudTenders(remote);
+        if (guest.length > 0) {
+          setGuestTenders([]);
+          showToast(
+            ky
+              ? `Бул браузердеги ${guest.length} эсептөө аккаунтка көчүрүлдү`
+              : `Расчёты из этого браузера (${guest.length}) перенесены в аккаунт`
+          );
+        }
+      } catch (error) {
+        console.error(error);
+        if (cancelled) return;
+        setCloudTenders(remote);
+        showToast(ky ? 'Аккаунттагы эсептөөлөрдү жүктөө мүмкүн болгон жок' : 'Не удалось загрузить расчёты из аккаунта');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Reload only when the signed-in user or the backend changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudUser?.id, cloudBackend]);
 
   useEffect(() => {
     try {
@@ -308,6 +371,7 @@ export default function App() {
   }, []);
 
   const handleShare = async () => {
+    if (!account.requireFeature('share')) return;
     const ky = lang === 'ky';
     const url = buildShareUrl(
       { title: currentTitle, params, items, discount },
@@ -329,7 +393,20 @@ export default function App() {
   };
 
   const handleSaveTender = (title: string) => {
-    setSavedTenders(prev => upsertSavedTender(prev, { title, params, items, discount }));
+    if (cloudUser && cloudBackend) {
+      const before = cloudTenders ?? [];
+      const after = upsertSavedTender(before, { title, params, items, discount });
+      if (after === before) return;
+      setCloudTenders(after);
+      setCurrentTitle(title);
+      cloudBackend.saveTender(cloudUser, after[0]).catch(error => {
+        console.error(error);
+        setCloudTenders(before);
+        showToast(lang === 'ky' ? 'Аккаунтка сактоо мүмкүн болгон жок' : 'Не удалось сохранить расчёт в аккаунт');
+      });
+      return;
+    }
+    setGuestTenders(prev => upsertSavedTender(prev, { title, params, items, discount }));
     setCurrentTitle(title);
   };
 
@@ -342,7 +419,17 @@ export default function App() {
   };
 
   const handleDeleteTender = (id: string) => {
-    setSavedTenders(prev => removeSavedTender(prev, id));
+    if (cloudUser && cloudBackend) {
+      const before = cloudTenders ?? [];
+      setCloudTenders(removeSavedTender(before, id));
+      cloudBackend.deleteTender(cloudUser, id).catch(error => {
+        console.error(error);
+        setCloudTenders(before);
+        showToast(lang === 'ky' ? 'Өчүрүү мүмкүн болгон жок' : 'Не удалось удалить расчёт');
+      });
+      return;
+    }
+    setGuestTenders(prev => removeSavedTender(prev, id));
   };
 
   const handleReset = () => {
@@ -368,10 +455,15 @@ export default function App() {
         onCurrencyChange={setCurrency}
         onReset={handleReset}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
-        onOpenSaved={() => setIsSavedOpen(true)}
+        onOpenSaved={() => account.requireFeature('savedTenders') && setIsSavedOpen(true)}
         savedCount={savedTenders.length}
-        onPrint={() => setIsPrintOpen(true)}
+        onPrint={() => account.requireFeature('print') && setIsPrintOpen(true)}
         onShare={handleShare}
+        account={
+          account.configured
+            ? { signedIn: account.user !== null, onOpen: () => account.openAccount() }
+            : undefined
+        }
       />
 
       {/* RUB is a display currency: show the rate it is converted with */}
@@ -495,13 +587,16 @@ export default function App() {
         onClose={() => setIsSavedOpen(false)}
         savedTenders={savedTenders}
         currentTitle={currentTitle}
-        storageFailed={savedStorageFailed}
+        storageFailed={!cloudUser && savedStorageFailed}
+        accountEmail={cloudUser?.email ?? null}
         onSave={handleSaveTender}
         onLoad={handleLoadTender}
         onDelete={handleDeleteTender}
         lang={lang}
         currency={currency}
       />
+
+      <AccountModal lang={lang} />
 
       <PrintModal
         isOpen={isPrintOpen}

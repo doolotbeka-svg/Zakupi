@@ -11,6 +11,8 @@ interface SavedTendersModalProps {
   savedTenders: SavedTender[];
   currentTitle: string;
   storageFailed: boolean;
+  /** Set when the list is stored in the signed-in user's account */
+  accountEmail?: string | null;
   onSave: (title: string) => void;
   onLoad: (tender: SavedTender) => void;
   onDelete: (id: string) => void;
@@ -24,6 +26,7 @@ export const SavedTendersModal: React.FC<SavedTendersModalProps> = ({
   savedTenders,
   currentTitle,
   storageFailed,
+  accountEmail = null,
   onSave,
   onLoad,
   onDelete,
@@ -116,10 +119,9 @@ export const SavedTendersModal: React.FC<SavedTendersModalProps> = ({
           <div>
             <h3 className="font-bold text-slate-900 text-base">{t.savedScenariosTitle}</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              {L(
-                'Эсептөөлөр ушул браузерде гана сакталат',
-                'Расчёты хранятся только в этом браузере'
-              )}
+              {accountEmail
+                ? L(`Эсептөөлөр аккаунтта сакталат: ${accountEmail}`, `Расчёты хранятся в аккаунте ${accountEmail}`)
+                : L('Эсептөөлөр ушул браузерде гана сакталат', 'Расчёты хранятся только в этом браузере')}
             </p>
           </div>
           <button

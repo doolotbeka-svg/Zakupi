@@ -4,6 +4,7 @@ import { translations } from '../i18n/translations';
 
 import { CalculationResult, TenderParams } from '../types';
 import { formatCurrency } from '../utils/taxCalculator';
+import { useAccount } from '../account/AccountContext';
 import { 
   Plus, 
   Trash2, 
@@ -36,6 +37,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
   onApplyToCost
 }) => {
   const t = translations[lang];
+  const account = useAccount();
   // The spreadsheet library is heavy, so it is loaded only when import / export is used
   const loadExcel = () => import('../utils/excel');
   const L = (ky: string, ru: string) => (lang === 'ky' ? ky : ru);
@@ -116,6 +118,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
   };
 
   const processFile = async (file: File) => {
+    if (!account.requireFeature('excel')) return;
     try {
       showStatus({ text: L('Файл жүктөлүп жатат...', 'Обработка файла...') });
       const { parseUploadedFile } = await loadExcel();
@@ -172,6 +175,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
           <button
             type="button"
             onClick={() => {
+              if (!account.requireFeature('excel')) return;
               loadExcel()
                 .then(m => m.exportTenderToExcel(params, result, items, lang, currency))
                 .catch(reportExcelError);
@@ -193,7 +197,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
           />
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => account.requireFeature('excel') && fileInputRef.current?.click()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-300 cursor-pointer transition-colors whitespace-nowrap"
             title={t.importFileBtn}
           >
