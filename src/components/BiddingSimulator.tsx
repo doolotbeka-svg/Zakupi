@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CalculationResult, CurrencySymbol, Language, TenderParams } from '../types';
 import { translations } from '../i18n/translations';
 import {
   breakEvenTolerance,
+  findDiscountForMargin,
   formatCurrency,
   formatDiscount,
   formatPercent,
   generateSensitivityMatrix,
   TAX_REGIMES
 } from '../utils/taxCalculator';
+import { MAX_DISCOUNT, SLIDER_MAX_DISCOUNT } from '../utils/storage';
 import { 
   TrendingDown, 
   TrendingUp, 
@@ -43,6 +45,26 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
   const [showTaxBreakdown, setShowTaxBreakdown] = useState(false);
   const [showMatrix, setShowMatrix] = useState(false);
 
+  // Exact discount field: keeps the raw text while typing ("12." or an empty field)
+  const [discountText, setDiscountText] = useState(formatDiscount(discount));
+  const [isEditingDiscount, setIsEditingDiscount] = useState(false);
+  useEffect(() => {
+    if (!isEditingDiscount) setDiscountText(formatDiscount(discount));
+  }, [discount, isEditingDiscount]);
+
+  const handleDiscountText = (text: string) => {
+    setDiscountText(text);
+    const value = parseFloat(text.replace(',', '.'));
+    if (Number.isFinite(value)) {
+      onDiscountChange(Math.round(Math.max(0, Math.min(MAX_DISCOUNT, value)) * 100) / 100);
+    }
+  };
+
+  // Reverse calculation: target profitability -> largest allowed discount
+  const [targetMarginText, setTargetMarginText] = useState('10');
+  const targetMargin = parseFloat(targetMarginText.replace(',', '.'));
+  const marginTarget = Number.isFinite(targetMargin) ? findDiscountForMargin(params, targetMargin) : null;
+
   const sensitivityMatrix = generateSensitivityMatrix(params, discount);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -50,7 +72,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
   };
 
   const handleStep = (delta: number) => {
-    const next = Math.max(0, Math.min(40, Math.round((discount + delta) * 10) / 10));
+    const next = Math.max(0, Math.min(MAX_DISCOUNT, Math.round((discount + delta) * 10) / 10));
     onDiscountChange(next);
   };
 
@@ -59,7 +81,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
   const isLoss = !isBreakEven && result.netProfit < 0;
   const isProfitable = !isBreakEven && result.netProfit > 0;
   // The break-even preset is only reachable when it lies inside the slider range
-  const canApplyBreakEven = result.breakEvenDiscount <= 40 && result.breakEvenPrice <= result.plannedPrice;
+  const canApplyBreakEven = result.breakEvenDiscount <= MAX_DISCOUNT && result.breakEvenPrice <= result.plannedPrice;
 
   return (
     <section className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
@@ -129,8 +151,25 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                 -0.5
               </button>
 
-              <div className="px-4 py-1.5 bg-slate-900 text-white font-mono text-lg font-bold rounded shadow-inner min-w-[90px] text-center tabular-nums">
-                {formatDiscount(discount)}%
+              <div className="flex items-center bg-slate-900 text-white font-mono text-lg font-bold rounded shadow-inner focus-within:ring-2 focus-within:ring-emerald-400">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={discountText}
+                  onChange={(e) => handleDiscountText(e.target.value)}
+                  onFocus={(e) => {
+                    setIsEditingDiscount(true);
+                    e.target.select();
+                  }}
+                  onBlur={() => setIsEditingDiscount(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                  }}
+                  aria-label={L('Төмөндөтүүнүн так пайызы', 'Точный процент снижения')}
+                  title={L('Так пайызды киргизиңиз (0–99.99)', 'Введите точный процент (0–99.99)')}
+                  className="w-[4.5rem] bg-transparent text-right tabular-nums py-1.5 pl-2 focus:outline-none"
+                />
+                <span className="pr-3 pl-0.5" aria-hidden="true">%</span>
               </div>
 
               <button
@@ -157,9 +196,10 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
             <input
               type="range"
               min="0"
-              max="40"
+              max={SLIDER_MAX_DISCOUNT}
               step="0.5"
-              value={discount}
+              value={Math.min(discount, SLIDER_MAX_DISCOUNT)}
+              aria-label={t.discountSliderLabel}
               onChange={handleSliderChange}
               className="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
@@ -205,6 +245,65 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
               >
                 ★ {t.breakEvenPoint}: {result.breakEvenDiscount}%
               </button>
+            )}
+          </div>
+        </div>
+
+        {/* Reverse calculation: desired profitability -> maximum discount */}
+        <div className="rounded-lg border border-slate-200 p-4 flex flex-col lg:flex-row lg:items-center gap-3 text-xs">
+          <div className="flex items-center gap-2 shrink-0">
+            <Target className="w-4 h-4 text-slate-600" />
+            <label htmlFor="targetMargin" className="font-bold uppercase tracking-wider text-slate-800">
+              {L('Тескери эсеп: каалаган рентабелдүүлүк', 'Обратный расчёт: желаемая рентабельность')}
+            </label>
+            <div className="flex items-center rounded border border-slate-300 bg-slate-50 focus-within:border-slate-800 focus-within:bg-white">
+              <input
+                id="targetMargin"
+                type="text"
+                inputMode="decimal"
+                value={targetMarginText}
+                onChange={(e) => setTargetMarginText(e.target.value)}
+                className="w-14 bg-transparent text-right font-mono font-semibold text-sm text-slate-900 py-1 pl-2 focus:outline-none tabular-nums"
+              />
+              <span className="pr-2 pl-0.5 font-mono text-slate-500">%</span>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-wrap items-center justify-between gap-2 text-slate-600" role="status">
+            {!marginTarget ? (
+              <span>{L('Пайызды киргизиңиз', 'Введите процент')}</span>
+            ) : marginTarget.status === 'ok' ? (
+              <>
+                <span>
+                  {L('Эң чоң төмөндөтүү', 'Максимальное снижение')}:{' '}
+                  <strong className="font-mono text-slate-900">{formatDiscount(marginTarget.discount)}%</strong>
+                  {' · '}
+                  {L('баа', 'цена не ниже')}{' '}
+                  <strong className="font-mono text-slate-900">{formatCurrency(marginTarget.price, currency)}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onDiscountChange(marginTarget.discount)}
+                  className="px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white font-medium cursor-pointer transition-colors whitespace-nowrap"
+                >
+                  {L('Колдонуу', 'Применить')}
+                </button>
+              </>
+            ) : marginTarget.status === 'above_planned' ? (
+              <span className="text-rose-700">
+                {L(
+                  'Пландалган баада мындай рентабелдүүлүккө жетүү мүмкүн эмес. Керектүү баа',
+                  'При плановой цене такая рентабельность недостижима. Нужна цена не ниже'
+                )}{' '}
+                <strong className="font-mono">{formatCurrency(marginTarget.price, currency)}</strong>
+              </span>
+            ) : (
+              <span className="text-rose-700">
+                {L(
+                  'Мындай рентабелдүүлүккө эч кандай баада жетүү мүмкүн эмес',
+                  'Такая рентабельность недостижима ни при какой цене'
+                )}
+              </span>
             )}
           </div>
         </div>

@@ -2,7 +2,9 @@ import { SavedTender, SpecificationItem, TenderParams } from '../types';
 import { INITIAL_TENDER_PARAMS } from '../data/defaultTemplates';
 import { TAX_REGIMES } from './taxCalculator';
 
-export const MAX_DISCOUNT = 40;
+/** The slider covers the usual range; larger drops can be typed into the exact field. */
+export const SLIDER_MAX_DISCOUNT = 40;
+export const MAX_DISCOUNT = 99.99;
 export const DEFAULT_DISCOUNT = 5;
 /** Upper bound for the saved calculations list, to stay well within the localStorage quota. */
 export const MAX_SAVED_TENDERS = 50;

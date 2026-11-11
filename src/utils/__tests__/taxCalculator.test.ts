@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { DEFAULT_KGS_PER_RUB, convertFromKgs, getKgsPerRub, sanitizeRate, setKgsPerRub } from '../currency';
 import { TenderParams } from '../../types';
 import { INITIAL_TENDER_PARAMS, TENDER_TEMPLATES, DEFAULT_SPECIFICATION_ITEMS } from '../../data/defaultTemplates';
 import {
@@ -6,6 +7,7 @@ import {
   calculateGuaranteeCost,
   calculateTaxes,
   calculateTender,
+  findDiscountForMargin,
   formatCurrency,
   formatDiscount,
   formatPercent,
@@ -210,6 +212,61 @@ describe('точка безубыточности', () => {
   });
 });
 
+describe('обратный расчёт (findDiscountForMargin)', () => {
+  it('находит точное снижение для единого налога 1%', () => {
+    // Прибыль = 0.99p − 800 000; рентабельность 10% → 0.89p = 800 000 → p = 898 876.4…
+    const target = findDiscountForMargin(bare({ directGoodsCost: 800_000 }), 10);
+
+    expect(target.status).toBe('ok');
+    expect(target.price).toBe(898_877);
+    expect(target.discount).toBe(10.11);
+  });
+
+  it('нулевая цель совпадает с точкой безубыточности', () => {
+    for (const template of TENDER_TEMPLATES) {
+      const breakEven = calculateTender(template.params, 0);
+      const target = findDiscountForMargin(template.params, 0);
+      expect(target).toEqual({ status: 'ok', discount: breakEven.breakEvenDiscount, price: breakEven.breakEvenPrice });
+    }
+  });
+
+  it.each([5, 10, 15, 20])('при найденном снижении рентабельность не ниже %d%%, а на шаг дальше — ниже', (percent) => {
+    for (const template of TENDER_TEMPLATES) {
+      for (const regime of [{}, { taxRegime: 'general' as const }, { taxRegime: 'custom' as const, customTaxBase: 'profit' as const, customTaxRate: 10 }]) {
+        const params = { ...template.params, ...regime };
+        const target = findDiscountForMargin(params, percent);
+        if (target.status !== 'ok') continue;
+
+        expect(calculateTender(params, target.discount).profitabilityPercent).toBeGreaterThanOrEqual(percent);
+        expect(calculateTender(params, target.discount + 0.01).profitabilityPercent).toBeLessThan(percent);
+      }
+    }
+  });
+
+  it('чем выше цель, тем меньше допустимое снижение', () => {
+    const discounts = [0, 5, 10, 15].map(p => findDiscountForMargin(INITIAL_TENDER_PARAMS, p).discount);
+    expect(discounts).toEqual([...discounts].sort((a, b) => b - a));
+    expect(new Set(discounts).size).toBe(discounts.length);
+  });
+
+  it('сообщает, когда нужна цена выше плановой', () => {
+    const target = findDiscountForMargin(bare({ directGoodsCost: 950_000 }), 10);
+
+    expect(target.status).toBe('above_planned');
+    expect(target.discount).toBe(0);
+    expect(target.price).toBeGreaterThan(1_000_000); // 950 000 / 0.89 ≈ 1 067 416
+    expect(target.price).toBe(1_067_416);
+  });
+
+  it('сообщает, когда цель недостижима ни при какой цене', () => {
+    // Налог 6% + цель 95% > 100% выручки
+    expect(findDiscountForMargin(bare({ taxRegime: 'unified_60', directGoodsCost: 100 }), 95).status).toBe('impossible');
+    expect(findDiscountForMargin(bare({ directGoodsCost: 100 }), 100).status).toBe('impossible');
+    expect(findDiscountForMargin(bare({ plannedPrice: 0 }), 10).status).toBe('impossible');
+    expect(findDiscountForMargin(bare({}), NaN).status).toBe('impossible');
+  });
+});
+
 describe('generateSensitivityMatrix', () => {
   it('содержит текущее снижение и точку безубыточности, отсортирована и без дублей', () => {
     const current = 6.5;
@@ -229,6 +286,32 @@ describe('generateSensitivityMatrix', () => {
     for (let i = 1; i < matrix.length; i++) {
       expect(matrix[i].netProfit).toBeLessThan(matrix[i - 1].netProfit);
     }
+  });
+});
+
+describe('пересчёт валюты при отображении', () => {
+  afterEach(() => setKgsPerRub(DEFAULT_KGS_PER_RUB));
+
+  it('суммы в сомах не зависят от курса', () => {
+    setKgsPerRub(1.25);
+    expect(formatCurrency(1_000_000, 'KGS')).toBe('1 000 000 KGS');
+    expect(convertFromKgs(500, 'KGS')).toBe(500);
+  });
+
+  it('суммы в рублях делятся на курс', () => {
+    setKgsPerRub(1.25);
+    expect(convertFromKgs(1_000_000, 'RUB')).toBe(800_000);
+    expect(formatCurrency(1_000_000, 'RUB')).toBe('800 000 RUB');
+    expect(formatCurrency(-125, 'RUB', 2)).toBe('−100.00 RUB');
+  });
+
+  it('некорректный курс заменяется на 1', () => {
+    for (const bad of [0, -3, NaN, Infinity, 5000]) {
+      setKgsPerRub(bad);
+      expect(getKgsPerRub()).toBe(DEFAULT_KGS_PER_RUB);
+    }
+    expect(sanitizeRate('1,1')).toBe(1.1);
+    expect(sanitizeRate('abc')).toBe(DEFAULT_KGS_PER_RUB);
   });
 });
 

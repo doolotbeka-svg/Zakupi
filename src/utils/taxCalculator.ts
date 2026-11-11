@@ -7,6 +7,7 @@ import {
   TenderParams,
   CurrencySymbol
 } from '../types';
+import { convertFromKgs } from './currency';
 
 export const TAX_REGIMES: Record<TaxRegimeId, TaxRegime> = {
   unified_00: {
@@ -375,9 +376,69 @@ export function calculateTender(
   };
 }
 
+export type MarginTargetStatus =
+  /** The target is reachable at or below the planned price */
+  | 'ok'
+  /** The target needs a contract price above the planned one */
+  | 'above_planned'
+  /** No contract price gives this margin */
+  | 'impossible';
+
+export interface MarginTarget {
+  status: MarginTargetStatus;
+  /** Largest discount (%) that still gives the target margin; 0 when not reachable */
+  discount: number;
+  /** Lowest contract price that gives the target margin; 0 when impossible */
+  price: number;
+}
+
 /**
- * Binary search solver for the exact break-even contract price (net profit = 0)
- * and the matching discount % from the planned price.
+ * Finds the lowest contract price at which net profit / contract price >= marginFraction,
+ * by binary search. Net profit minus the required margin grows monotonically with the price.
+ */
+function findPriceForMargin(params: TenderParams, marginFraction: number): number | null {
+  const { plannedPrice, logisticsCost, guaranteeType, guaranteeValue, otherExpenses, directGoodsCost } = params;
+
+  const guaranteeCost = calculateGuaranteeCost(plannedPrice, guaranteeType, guaranteeValue);
+  const totalExpenses = directGoodsCost + logisticsCost + guaranteeCost + otherExpenses;
+
+  const surplusAt = (price: number) =>
+    price -
+    totalExpenses -
+    calculateTaxes(price, directGoodsCost, totalExpenses, params).totalTax -
+    marginFraction * price;
+
+  let high = Math.max(plannedPrice, 1);
+  let guard = 0;
+  while (surplusAt(high) <= 0 && guard < 40) {
+    high *= 2;
+    guard++;
+  }
+  if (surplusAt(high) <= 0) return null;
+
+  let low = 0;
+  for (let i = 0; i < 60; i++) {
+    const mid = (low + high) / 2;
+    if (surplusAt(mid) > 0) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+  return high;
+}
+
+/** Rounds the discount down and the price up so the displayed limits never miss the target. */
+function toDiscountAndPrice(price: number, plannedPrice: number): { discount: number; price: number } {
+  const discount = Math.max(0, Math.min(100, (1 - price / plannedPrice) * 100));
+  return {
+    discount: Math.floor(discount * 100 + 1e-6) / 100,
+    price: Math.ceil(price - 1e-6)
+  };
+}
+
+/**
+ * Exact break-even contract price (net profit = 0) and the matching discount %.
  *
  * If the tender is unprofitable even without any discount, the discount is 0 and
  * the returned price is the (higher than planned) price needed to break even.
@@ -387,45 +448,35 @@ function findBreakEven(params: TenderParams): { discount: number; price: number 
   if (plannedPrice <= 0) return { discount: 0, price: 0 };
 
   const guaranteeCost = calculateGuaranteeCost(plannedPrice, guaranteeType, guaranteeValue);
-  const totalExpenses = directGoodsCost + logisticsCost + guaranteeCost + otherExpenses;
-
-  if (totalExpenses <= 0) {
+  if (directGoodsCost + logisticsCost + guaranteeCost + otherExpenses <= 0) {
     return { discount: 100, price: 0 };
   }
 
-  const profitAt = (price: number) =>
-    price - totalExpenses - calculateTaxes(price, directGoodsCost, totalExpenses, params).totalTax;
+  const price = findPriceForMargin(params, 0);
+  // No price can cover the costs (e.g. a 100% tax on revenue)
+  if (price === null) return { discount: 0, price: 0 };
 
-  // Net profit grows monotonically with the contract price, so bracket the root first.
-  let high = plannedPrice;
-  let guard = 0;
-  while (profitAt(high) <= 0 && guard < 40) {
-    high *= 2;
-    guard++;
-  }
-  if (profitAt(high) <= 0) {
-    // No price can cover the costs (e.g. a 100% tax on revenue)
-    return { discount: 0, price: 0 };
-  }
+  return toDiscountAndPrice(price, plannedPrice);
+}
 
-  let low = 0;
-  for (let i = 0; i < 60; i++) {
-    const mid = (low + high) / 2;
-    if (profitAt(mid) > 0) {
-      high = mid;
-    } else {
-      low = mid;
-    }
+/**
+ * Reverse calculation: the largest discount at which profitability
+ * (net profit as % of the contract price) is still at least targetPercent.
+ */
+export function findDiscountForMargin(params: TenderParams, targetPercent: number): MarginTarget {
+  const { plannedPrice } = params;
+  if (!(plannedPrice > 0) || !Number.isFinite(targetPercent) || targetPercent >= 100) {
+    return { status: 'impossible', discount: 0, price: 0 };
   }
 
-  const price = high;
-  const discount = Math.max(0, Math.min(100, (1 - price / plannedPrice) * 100));
+  const price = findPriceForMargin(params, targetPercent / 100);
+  if (price === null) return { status: 'impossible', discount: 0, price: 0 };
 
-  return {
-    // Round the discount down and the price up so the displayed limits never fall into a loss
-    discount: Math.floor(discount * 100 + 1e-6) / 100,
-    price: Math.ceil(price - 1e-6)
-  };
+  const rounded = toDiscountAndPrice(price, plannedPrice);
+  if (price > plannedPrice) {
+    return { status: 'above_planned', discount: 0, price: rounded.price };
+  }
+  return { status: 'ok', ...rounded };
 }
 
 /**
@@ -440,7 +491,7 @@ export function generateSensitivityMatrix(
 
   // Combine and sort uniquely
   const allDiscounts = Array.from(new Set([...steps, currentDiscount, breakEven.discount]))
-    .filter(d => Number.isFinite(d) && d >= 0 && d <= 50)
+    .filter(d => Number.isFinite(d) && d >= 0 && d <= 100)
     .sort((a, b) => a - b);
 
   return allDiscounts.map(discount => {
@@ -458,19 +509,21 @@ export function generateSensitivityMatrix(
 }
 
 /**
- * Currency formatter with spaces and decimal options.
+ * Currency formatter with spaces and decimal options. Takes an amount in soms.
  */
 export function formatCurrency(
   amount: number,
   currency: CurrencySymbol = 'KGS',
   decimals = 0
 ): string {
-  if (!Number.isFinite(amount)) return `0 ${currency}`;
-  const fixed = Math.abs(amount).toFixed(decimals);
+  // Amounts are stored in soms; RUB is shown at the manually entered rate
+  const value = convertFromKgs(amount, currency);
+  if (!Number.isFinite(value)) return `0 ${currency}`;
+  const fixed = Math.abs(value).toFixed(decimals);
   const parts = fixed.split('.');
   parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   // Never show a minus sign in front of a value that rounds to zero
-  const sign = amount < 0 && Number(fixed) !== 0 ? '−' : '';
+  const sign = value < 0 && Number(fixed) !== 0 ? '−' : '';
   return `${sign}${parts.join('.')} ${currency}`;
 }
 

@@ -3,6 +3,7 @@ import { DEFAULT_SPECIFICATION_ITEMS, INITIAL_TENDER_PARAMS } from '../../data/d
 import { SavedTender } from '../../types';
 import {
   DEFAULT_DISCOUNT,
+  MAX_DISCOUNT,
   MAX_SAVED_TENDERS,
   MAX_TITLE_LENGTH,
   findSavedByTitle,
@@ -174,11 +175,13 @@ describe('sanitizeParams / sanitizeItems / sanitizeDiscount', () => {
     ]);
   });
 
-  it('sanitizeDiscount принимает только 0–40', () => {
+  it('sanitizeDiscount принимает только 0–99.99', () => {
     expect(sanitizeDiscount('7.5')).toBe(7.5);
     expect(sanitizeDiscount(0)).toBe(0);
     expect(sanitizeDiscount(40)).toBe(40);
-    expect(sanitizeDiscount(41)).toBe(DEFAULT_DISCOUNT);
+    expect(sanitizeDiscount(62.35)).toBe(62.35);
+    expect(sanitizeDiscount(MAX_DISCOUNT)).toBe(MAX_DISCOUNT);
+    expect(sanitizeDiscount(100)).toBe(DEFAULT_DISCOUNT);
     expect(sanitizeDiscount(-1)).toBe(DEFAULT_DISCOUNT);
     expect(sanitizeDiscount('abc')).toBe(DEFAULT_DISCOUNT);
   });

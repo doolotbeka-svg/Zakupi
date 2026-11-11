@@ -3,6 +3,7 @@ import { CalculationResult, CurrencySymbol, Language, SpecificationItem, TenderP
 import { translations } from '../i18n/translations';
 import { TAX_REGIMES, formatCurrency, formatDiscount, formatPercent } from '../utils/taxCalculator';
 import { Printer, X } from 'lucide-react';
+import { getKgsPerRub } from '../utils/currency';
 
 interface PrintModalProps {
   isOpen: boolean;
@@ -85,7 +86,8 @@ export const PrintModal: React.FC<PrintModalProps> = ({
             </div>
             <div className="text-right text-xs font-mono text-slate-600">
               <div>{L('Күнү', 'Дата')}: {new Date().toLocaleDateString('ru-RU')}</div>
-              <div>Валюта: {currency}</div>
+              <div>{L('Валюта', 'Валюта')}: {currency}</div>
+              {currency === 'RUB' && <div>1 RUB = {getKgsPerRub()} KGS</div>}
             </div>
           </div>
 

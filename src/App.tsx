@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CurrencySymbol, Language, SavedTender, SpecificationItem, TenderParams } from './types';
 import { DEFAULT_SPECIFICATION_ITEMS, INITIAL_TENDER_PARAMS, TenderTemplate } from './data/defaultTemplates';
 import { calculateTender } from './utils/taxCalculator';
@@ -17,6 +17,8 @@ import {
   sanitizeSavedTenders,
   upsertSavedTender
 } from './utils/storage';
+import { DEFAULT_KGS_PER_RUB, sanitizeRate, setKgsPerRub } from './utils/currency';
+import { LONG_LINK_LENGTH, SharedTender, buildShareUrl, readSharedTenderFromHash } from './utils/share';
 import { translations } from './i18n/translations';
 import { Header } from './components/Header';
 import { TenderParamsBlock } from './components/TenderParamsBlock';
@@ -34,6 +36,7 @@ const STORAGE_KEY_LANG = 'kg_tender_calc_lang_v1';
 const STORAGE_KEY_CURRENCY = 'kg_tender_calc_currency_v1';
 const STORAGE_KEY_SAVED = 'kg_tender_calc_saved_v1';
 const STORAGE_KEY_TITLE = 'kg_tender_calc_title_v1';
+const STORAGE_KEY_RATE = 'kg_tender_calc_rub_rate_v1';
 
 export default function App() {
   // Main language state: DEFAULT IS KYRGYZ ('ky') as strictly required
@@ -56,6 +59,20 @@ export default function App() {
     }
     return 'KGS';
   });
+
+  // Display rate for RUB: how many soms one ruble costs (entered manually)
+  const [rubRate, setRubRate] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_RATE);
+      if (saved) return sanitizeRate(saved);
+    } catch {
+      // ignore
+    }
+    return DEFAULT_KGS_PER_RUB;
+  });
+  const [rubRateText, setRubRateText] = useState(() => String(rubRate));
+  // Every amount formatted during this render uses the current rate
+  setKgsPerRub(rubRate);
 
   // Specification items
   const [items, setItems] = useState<SpecificationItem[]>(() => {
@@ -89,7 +106,7 @@ export default function App() {
     return INITIAL_TENDER_PARAMS;
   });
 
-  // Bidding discount percentage (0% to 40% with 0.5% step)
+  // Bidding discount percentage (slider 0–40% in 0.5% steps, exact field up to 99.99%)
   const [discount, setDiscount] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_DISCOUNT);
@@ -125,6 +142,16 @@ export default function App() {
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isPrintOpen, setIsPrintOpen] = useState(false);
   const [isSavedOpen, setIsSavedOpen] = useState(false);
+
+  // Short status message at the bottom of the screen
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | undefined>(undefined);
+  const showToast = (message: string) => {
+    window.clearTimeout(toastTimerRef.current);
+    setToast(message);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 4000);
+  };
+  useEffect(() => () => window.clearTimeout(toastTimerRef.current), []);
 
   // Sync specification total with directGoodsCost if syncWithSpec is true
   useEffect(() => {
@@ -190,6 +217,14 @@ export default function App() {
 
   useEffect(() => {
     try {
+      localStorage.setItem(STORAGE_KEY_RATE, String(rubRate));
+    } catch {
+      // ignore
+    }
+  }, [rubRate]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(STORAGE_KEY_TITLE, currentTitle);
     } catch {
       // ignore
@@ -232,6 +267,65 @@ export default function App() {
     setItems(tmpl.items);
     setDiscount(Math.max(0, Math.min(MAX_DISCOUNT, tmpl.defaultDiscount)));
     setCurrentTitle('');
+  };
+
+  const applySharedTender = (shared: SharedTender) => {
+    setParams(shared.params);
+    setItems(shared.items);
+    setDiscount(shared.discount);
+    setCurrentTitle(shared.title);
+  };
+
+  // Open a calculation passed in the link (#s=...). The visitor's own calculation
+  // is only replaced after confirmation; the hash is removed either way.
+  const sharedLinkHandled = useRef(false);
+  useEffect(() => {
+    if (sharedLinkHandled.current) return;
+    sharedLinkHandled.current = true;
+
+    const hash = window.location.hash;
+    if (!hash.startsWith('#s=')) return;
+    const shared = readSharedTenderFromHash(hash);
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+    const ky = lang === 'ky';
+    if (!shared) {
+      showToast(ky ? 'Шилтемедеги эсептөөнү окуу мүмкүн болгон жок' : 'Не удалось прочитать расчёт из ссылки');
+      return;
+    }
+    const name = shared.title ? ` «${shared.title}»` : '';
+    if (
+      window.confirm(
+        ky
+          ? `Шилтемедеги эсептөө${name} ачылсынбы? Учурдагы эсептөө алмаштырылат.`
+          : `Открыть расчёт${name} из ссылки? Текущий расчёт будет заменён.`
+      )
+    ) {
+      applySharedTender(shared);
+      showToast(ky ? 'Шилтемедеги эсептөө ачылды' : 'Расчёт из ссылки открыт');
+    }
+    // Runs once on start
+  }, []);
+
+  const handleShare = async () => {
+    const ky = lang === 'ky';
+    const url = buildShareUrl(
+      { title: currentTitle, params, items, discount },
+      window.location.origin + window.location.pathname
+    );
+    const lengthNote =
+      url.length > LONG_LINK_LENGTH
+        ? ky
+          ? ' Шилтеме узун — айрым мессенджерлер аны кесип салышы мүмкүн.'
+          : ' Ссылка длинная — некоторые мессенджеры могут её обрезать.'
+        : '';
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast((ky ? 'Шилтеме көчүрүлдү.' : 'Ссылка на расчёт скопирована.') + lengthNote);
+    } catch {
+      // Clipboard is unavailable (old browser or no permission): let the user copy it manually
+      window.prompt(ky ? 'Шилтемени көчүрүңүз:' : 'Скопируйте ссылку:', url);
+    }
   };
 
   const handleSaveTender = (title: string) => {
@@ -277,7 +371,40 @@ export default function App() {
         onOpenSaved={() => setIsSavedOpen(true)}
         savedCount={savedTenders.length}
         onPrint={() => setIsPrintOpen(true)}
+        onShare={handleShare}
       />
+
+      {/* RUB is a display currency: show the rate it is converted with */}
+      {currency === 'RUB' && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-950 text-xs">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <label htmlFor="rubRate" className="font-semibold">
+              {lang === 'ky' ? 'Рублдин курсу' : 'Курс рубля'}: 1 RUB =
+            </label>
+            <div className="flex items-center rounded border border-amber-300 bg-white focus-within:border-amber-600">
+              <input
+                id="rubRate"
+                type="text"
+                inputMode="decimal"
+                value={rubRateText}
+                onChange={(e) => {
+                  setRubRateText(e.target.value);
+                  const value = parseFloat(e.target.value.replace(',', '.'));
+                  if (Number.isFinite(value) && value > 0) setRubRate(sanitizeRate(value));
+                }}
+                onBlur={() => setRubRateText(String(rubRate))}
+                className="w-16 bg-transparent text-right font-mono font-semibold py-1 pl-2 focus:outline-none tabular-nums"
+              />
+              <span className="pr-2 pl-1 font-mono text-amber-800">KGS</span>
+            </div>
+            <span className="text-amber-900/80">
+              {lang === 'ky'
+                ? 'Суммалар ушул курс боюнча рубль менен көрсөтүлөт. Киргизүү талаалары сом менен калат.'
+                : 'Суммы показаны в рублях по этому курсу. Поля ввода остаются в сомах.'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -340,10 +467,19 @@ export default function App() {
               zakupki.okmot.kg ({lang === 'ky' ? 'Мамлекеттик сатып алуулар' : 'Государственные закупки'})
             </a>
             <span aria-hidden="true">·</span>
-            <span>Валюта: KGS / RUB</span>
+            <span>{lang === 'ky' ? 'Эсеп сом менен жүргүзүлөт' : 'Расчёт ведётся в сомах'}</span>
           </div>
         </div>
       </footer>
+
+      {toast && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100vw-2rem)] px-4 py-2.5 rounded-md bg-slate-900 text-white text-xs font-medium shadow-lg no-print"
+        >
+          {toast}
+        </div>
+      )}
 
       {/* Modals */}
       <TemplatesModal
