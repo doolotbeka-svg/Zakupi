@@ -1,9 +1,9 @@
 import React from 'react';
-import { CurrencySymbol, Language, TenderParams } from '../types';
+import { CurrencySymbol, Language } from '../types';
 import { translations } from '../i18n/translations';
 import { TENDER_TEMPLATES, TenderTemplate } from '../data/defaultTemplates';
 import { formatCurrency } from '../utils/taxCalculator';
-import { X, Check, Laptop, Utensils, Hammer } from 'lucide-react';
+import { X, Laptop, Utensils, Hammer } from 'lucide-react';
 
 interface TemplatesModalProps {
   isOpen: boolean;
@@ -22,6 +22,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
 }) => {
   if (!isOpen) return null;
   const t = translations[lang];
+  const L = (ky: string, ru: string) => (lang === 'ky' ? ky : ru);
 
   const getTemplateIcon = (id: string) => {
     switch (id) {
@@ -37,21 +38,29 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="bg-white rounded-lg border border-slate-300 shadow-xl max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs no-print"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white rounded-lg border border-slate-300 shadow-xl max-w-2xl w-full overflow-hidden">
         <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-slate-900 text-base">
               {t.templatesModalTitle}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Кыргызстандын мамлекеттик сатып алуулар порталынын практикалык мисалдары
+              {L('Кыргызстандын мамлекеттик сатып алуулар порталынын практикалык мисалдары', 'Практические примеры с портала государственных закупок Кыргызстана')}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-200 cursor-pointer"
+            aria-label={t.closeModal}
+            title={t.closeModal}
           >
             <X className="w-5 h-5" />
           </button>
@@ -77,7 +86,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
                   <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 mt-2 font-mono">
                     <span>План: <strong>{formatCurrency(tmpl.params.plannedPrice, currency)}</strong></span>
                     <span aria-hidden="true">·</span>
-                    <span>Товар: <strong>{tmpl.items.length} поз.</strong></span>
+                    <span>{L('Товар', 'Товары')}: <strong>{tmpl.items.length} {L('поз.', 'поз.')}</strong></span>
                     <span aria-hidden="true">·</span>
                     <span>Аукцион: <strong>{tmpl.defaultDiscount}%</strong></span>
                   </div>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { CurrencySymbol, CustomTaxBase, Language, TaxRegimeId, TenderParams } from '../types';
+import { CurrencySymbol, Language, TaxRegimeId, TenderParams } from '../types';
 import { translations } from '../i18n/translations';
-import { TAX_REGIMES, formatCurrency } from '../utils/taxCalculator';
+import { TAX_REGIMES, calculateGuaranteeCost, formatCurrency } from '../utils/taxCalculator';
 import { 
   Building2, 
   Info, 
@@ -32,6 +32,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
   specTotalCost
 }) => {
   const t = translations[lang];
+  const L = (ky: string, ru: string) => (lang === 'ky' ? ky : ru);
   const [showTaxDetails, setShowTaxDetails] = useState(false);
 
   const selectedRegime = TAX_REGIMES[params.taxRegime] || TAX_REGIMES.unified_05;
@@ -124,10 +125,10 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
               type="button"
               onClick={() => setShowTaxDetails(!showTaxDetails)}
               className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-0.5 cursor-pointer"
-              title="Маалымат"
+              title={L('Маалымат', 'Справка')}
             >
               <Info className="w-3.5 h-3.5" />
-              <span className="text-[11px] underline">КР Салык кодекси</span>
+              <span className="text-[11px] underline">{L('КР Салык кодекси', 'Налоговый кодекс КР')}</span>
             </button>
           </div>
           
@@ -200,7 +201,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
           </div>
           <div className="flex items-center justify-between text-xs text-slate-500 pt-0.5">
             <span>
-              {params.syncWithSpec ? `Таблицадан (3-блок)` : `Кол менен киргизилген`}
+              {params.syncWithSpec ? L('Таблицадан (3-блок)', 'Из таблицы (блок 3)') : L('Кол менен киргизилген', 'Введено вручную')}
             </span>
             <span className="font-mono font-medium text-slate-700">
               {formatCurrency(params.syncWithSpec ? specTotalCost : params.directGoodsCost, currency)}
@@ -285,9 +286,10 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
           <div className="flex items-center justify-between text-xs text-slate-500 pt-0.5">
             <span className="truncate max-w-[200px]" title={t.guaranteeHelp}>{t.guaranteeHelp}</span>
             <span className="font-mono font-medium text-slate-700 whitespace-nowrap">
-              {params.guaranteeType === 'percent'
-                ? `= ${formatCurrency((params.plannedPrice * params.guaranteeValue) / 100, currency)}`
-                : `${params.guaranteeValue} ${currency}`}
+              = {formatCurrency(
+                calculateGuaranteeCost(params.plannedPrice, params.guaranteeType, params.guaranteeValue),
+                currency
+              )}
             </span>
           </div>
         </div>
@@ -341,14 +343,14 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
                   max="100"
                   step="0.1"
                   value={params.customTaxRate ?? ''}
-                  onChange={(e) => onChange({ customTaxRate: Math.max(0, parseFloat(e.target.value) || 0) })}
+                  onChange={(e) => onChange({ customTaxRate: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) })}
                   className="w-full bg-white text-slate-900 font-mono text-base font-semibold px-3.5 py-2 rounded border border-emerald-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 focus:outline-none tabular-nums"
                   placeholder={t.customTaxRatePlaceholder}
                 />
                 <span className="absolute right-3.5 top-2.5 text-xs font-mono font-bold text-slate-500">%</span>
               </div>
               <p className="text-[11px] text-slate-600">
-                Мисалы: 0.1%, 3%, 8% же башка атайын режимдеги ченем
+                {L('Мисалы: 0.1%, 3%, 8% же башка атайын режимдеги ченем', 'Например: 0.1%, 3%, 8% или ставка иного специального режима')}
               </p>
             </div>
 
@@ -385,8 +387,8 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
               </div>
               <p className="text-[11px] text-slate-600">
                 {params.customTaxBase === 'revenue'
-                  ? 'Салык контракттын акыркы баасынан кармалат'
-                  : 'Салык чыгашалар кемитилгенден кийинки пайдадан кармалат'}
+                  ? L('Салык контракттын акыркы баасынан кармалат', 'Налог рассчитывается от итоговой цены контракта')
+                  : L('Салык чыгашалар кемитилгенден кийинки пайдадан кармалат', 'Налог рассчитывается от прибыли после вычета расходов')}
               </p>
             </div>
           </div>
@@ -430,7 +432,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
             <div className="mt-3 pt-3 border-t border-indigo-200/80 text-xs text-indigo-900 flex items-center gap-2">
               <Receipt className="w-4 h-4 text-indigo-600 shrink-0" />
               <span>
-                <strong>Зачет колдонулду:</strong> бюджетке төлөнүүчү КНС = <em>Чыгуучу КНС (12/112) − Кирүүчү КНС ({formatCurrency(estimatedInputVat, currency)})</em>.
+                <strong>{L('Зачет колдонулду', 'Зачёт применён')}:</strong> {L('бюджетке төлөнүүчү КНС', 'НДС к уплате в бюджет')} = <em>{L('Чыгуучу КНС', 'Исходящий НДС')} (12/112) − {L('Кирүүчү КНС', 'Входящий НДС')} ({formatCurrency(estimatedInputVat, currency)})</em>.
               </span>
             </div>
           )}
@@ -443,7 +445,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
           <div className="flex items-center justify-between">
             <div className="font-bold text-slate-800 flex items-center gap-1.5">
               <HelpCircle className="w-4 h-4 text-slate-700" />
-              <span>Кыргыз Республикасынын Салык кодекси боюнча маалымат:</span>
+              <span>{L('Кыргыз Республикасынын Салык кодекси боюнча маалымат', 'Справка по Налоговому кодексу Кыргызской Республики')}:</span>
             </div>
             <button
               type="button"
@@ -455,33 +457,33 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
             <div className="p-2.5 bg-white rounded border border-slate-200">
-              <div className="font-semibold text-slate-900">0% — Тигүү тармагы</div>
+              <div className="font-semibold text-slate-900">{L('0% — Тигүү тармагы', '0% — Швейная отрасль')}</div>
               <p className="mt-1 text-slate-600 leading-relaxed">
-                Тигүү жана текстиль продукциясын өндүрүүчүлөр үчүн жеңилдетилген 0% ставка.
+                {L('Тигүү жана текстиль продукциясын өндүрүүчүлөр үчүн жеңилдетилген 0% ставка.', 'Льготная ставка 0% для производителей швейной и текстильной продукции.')}
               </p>
             </div>
             <div className="p-2.5 bg-white rounded border border-slate-200">
-              <div className="font-semibold text-slate-900">0.5% жана 1% — Соода</div>
+              <div className="font-semibold text-slate-900">{L('0.5% жана 1% — Соода', '0.5% и 1% — Торговля')}</div>
               <p className="mt-1 text-slate-600 leading-relaxed">
-                Электрондук эсеп-фактура (ЭСФ) жана ККМ менен соода жүргүзгөндө накталай эмес эсептешүүлөр.
+                {L('Электрондук эсеп-фактура (ЭСФ) жана ККМ менен соода жүргүзгөндө накталай эмес эсептешүүлөр.', 'Безналичные расчёты в торговле с применением ЭСФ и ККМ.')}
               </p>
             </div>
             <div className="p-2.5 bg-white rounded border border-slate-200">
-              <div className="font-semibold text-slate-900">2% жана 4% — Кызмат жана өндүрүш</div>
+              <div className="font-semibold text-slate-900">{L('2% жана 4% — Кызмат жана өндүрүш', '2% и 4% — Услуги и производство')}</div>
               <p className="mt-1 text-slate-600 leading-relaxed">
-                Подряддык жумуштар, курулуш, техникалык тейлөө жана накталай эмес өндүрүштүк камсыздоо.
+                {L('Подряддык жумуштар, курулуш, техникалык тейлөө жана накталай эмес өндүрүштүк камсыздоо.', 'Подрядные работы, строительство, техобслуживание и безналичные производственные поставки.')}
               </p>
             </div>
             <div className="p-2.5 bg-white rounded border border-slate-200">
-              <div className="font-semibold text-slate-900">6% — Накталай эсептешүү</div>
+              <div className="font-semibold text-slate-900">{L('6% — Накталай эсептешүү', '6% — Наличный расчёт')}</div>
               <p className="mt-1 text-slate-600 leading-relaxed">
-                Төлөмдөр накталай акчалай жүргүзүлгөндө колдонулуучу ставка.
+                {L('Төлөмдөр накталай акчалай жүргүзүлгөндө колдонулуучу ставка.', 'Ставка, применяемая при расчётах наличными.')}
               </p>
             </div>
             <div className="p-2.5 bg-white rounded border border-slate-200 md:col-span-2">
-              <div className="font-semibold text-slate-900">Жалпы режим (КНС 12% + Сатуудан салык 1% + Пайда салыгы 10%)</div>
+              <div className="font-semibold text-slate-900">{L('Жалпы режим (КНС 12% + Сатуудан салык 1% + Пайда салыгы 10%)', 'Общий режим (НДС 12% + НсП 1% + налог на прибыль 10%)')}</div>
               <p className="mt-1 text-slate-600 leading-relaxed">
-                КНС эсепке алуу (зачет) мүмкүнчүлүгү менен. Эгер товар ЭСФ жана КНС менен алынса, сатуу КНСинен зачет алынат жана бюджетке айырмасы гана төлөнөт.
+                {L('КНС эсепке алуу (зачет) мүмкүнчүлүгү менен. Эгер товар ЭСФ жана КНС менен алынса, сатуу КНСинен зачет алынат жана бюджетке айырмасы гана төлөнөт.', 'С возможностью зачёта НДС. Если товар закуплен с ЭСФ и НДС, входящий НДС принимается к зачёту и в бюджет уплачивается только разница.')}
               </p>
             </div>
           </div>

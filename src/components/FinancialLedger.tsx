@@ -1,7 +1,7 @@
 import React from 'react';
 import { CalculationResult, CurrencySymbol, Language, TenderParams } from '../types';
 import { translations } from '../i18n/translations';
-import { TAX_REGIMES, formatCurrency, formatPercent } from '../utils/taxCalculator';
+import { TAX_REGIMES, formatCurrency, formatDiscount, formatPercent } from '../utils/taxCalculator';
 
 interface FinancialLedgerProps {
   params: TenderParams;
@@ -17,7 +17,8 @@ export const FinancialLedger: React.FC<FinancialLedgerProps> = ({
   currency
 }) => {
   const t = translations[lang];
-  const regime = TAX_REGIMES[params.taxRegime];
+  const L = (ky: string, ru: string) => (lang === 'ky' ? ky : ru);
+  const regime = TAX_REGIMES[params.taxRegime] ?? TAX_REGIMES.unified_05;
 
   const grossMargin = result.finalContractPrice - result.totalExpenses;
 
@@ -44,10 +45,10 @@ export const FinancialLedger: React.FC<FinancialLedgerProps> = ({
         {/* Row 2: Discount */}
         <div className="px-5 py-2.5 flex items-center justify-between hover:bg-slate-50 bg-slate-50/30">
           <span className="text-slate-600">
-            {t.ledgerBiddingDrop} <strong className="font-mono text-slate-800">({result.discountPercent.toFixed(1)}%)</strong>
+            {t.ledgerBiddingDrop} <strong className="font-mono text-slate-800">({formatDiscount(result.discountPercent)}%)</strong>
           </span>
           <span className="font-mono text-rose-600 font-medium tabular-nums">
-            -{formatCurrency(result.priceDropSum, currency)}
+            {result.priceDropSum > 0 ? '−' : ''}{formatCurrency(result.priceDropSum, currency)}
           </span>
         </div>
 
@@ -61,7 +62,7 @@ export const FinancialLedger: React.FC<FinancialLedgerProps> = ({
 
         {/* Cost Section */}
         <div className="px-5 py-2 flex items-center justify-between text-slate-500 bg-slate-50/60 text-[11px] font-semibold uppercase tracking-wider">
-          <span>Өздүк нарк жана чыгашалар (Чыгымдар)</span>
+          <span>{L('Өздүк нарк жана чыгашалар', 'Себестоимость и расходы')}</span>
           <span>Сумма</span>
         </div>
 
@@ -105,7 +106,7 @@ export const FinancialLedger: React.FC<FinancialLedgerProps> = ({
 
         {/* Taxes Section */}
         <div className="px-5 py-2 flex items-center justify-between text-slate-500 bg-slate-50/60 text-[11px] font-semibold uppercase tracking-wider">
-          <span>Салыктык милдеттемелер ({regime.name[lang]})</span>
+          <span>{L('Салыктык милдеттемелер', 'Налоговые обязательства')} ({regime.name[lang]})</span>
           <span>{formatCurrency(result.taxes.totalTax, currency)}</span>
         </div>
 
@@ -121,9 +122,9 @@ export const FinancialLedger: React.FC<FinancialLedgerProps> = ({
 
             {result.taxes.inputVatOffsetApplied && (
               <div className="px-5 py-2 flex items-center justify-between hover:bg-slate-50 pl-8 text-indigo-700 bg-indigo-50/20">
-                <span className="font-medium">· {t.vatInputLabel} (КНС эсепке алуу)</span>
+                <span className="font-medium">· {t.vatInputLabel}</span>
                 <span className="font-mono font-semibold tabular-nums">
-                  -{formatCurrency(result.taxes.vatInput, currency)}
+                  −{formatCurrency(result.taxes.vatInput, currency)}
                 </span>
               </div>
             )}
@@ -165,7 +166,7 @@ export const FinancialLedger: React.FC<FinancialLedgerProps> = ({
         {params.taxRegime === 'custom' && (
           <div className="px-5 py-2 flex items-center justify-between hover:bg-slate-50 pl-8 text-emerald-800 bg-emerald-50/20">
             <span className="font-medium">
-              · {t.ledgerCustomTax} ({params.customTaxRate || 0}%, {params.customTaxBase === 'profit' ? 'пайдадан' : 'выручкадан'})
+              · {t.ledgerCustomTax} ({params.customTaxRate || 0}%, {params.customTaxBase === 'profit' ? L('пайдадан', 'от прибыли') : L('түшкөн акчадан', 'от выручки')})
             </span>
             <span className="font-mono font-bold tabular-nums">
               {formatCurrency(result.taxes.customTax, currency)}
@@ -175,16 +176,16 @@ export const FinancialLedger: React.FC<FinancialLedgerProps> = ({
 
         {/* Final Net Profit */}
         <div className={`px-5 py-3.5 flex items-center justify-between font-bold text-sm ${
-          result.isProfitable ? 'bg-emerald-50 text-emerald-950' : 'bg-rose-50 text-rose-950'
+          result.netProfit >= 0 ? 'bg-emerald-50 text-emerald-950' : 'bg-rose-50 text-rose-950'
         }`}>
           <div className="flex flex-col">
             <span className="uppercase tracking-wide">{t.ledgerNetProfitTotal}</span>
             <span className="text-[11px] font-normal text-slate-500 font-sans">
-              Рентабелдүүлүк: {formatPercent(result.profitabilityPercent)} | ROI: {formatPercent(result.roiPercent)}
+              {L('Рентабелдүүлүк', 'Рентабельность')}: {formatPercent(result.profitabilityPercent)} | ROI: {formatPercent(result.roiPercent)}
             </span>
           </div>
           <span className={`font-mono text-base tabular-nums ${
-            result.isProfitable ? 'text-emerald-700 font-extrabold' : 'text-rose-700 font-extrabold'
+            result.netProfit >= 0 ? 'text-emerald-700 font-extrabold' : 'text-rose-700 font-extrabold'
           }`}>
             {formatCurrency(result.netProfit, currency)}
           </span>
