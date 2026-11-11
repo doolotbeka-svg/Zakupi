@@ -26,6 +26,7 @@ export class FakeAccountBackend implements AccountBackend {
 
   async sendCode(email: string) {
     if (email === 'limited@example.com') throw new AccountError('rate_limit');
+    if (email === 'outsider@example.com') throw new AccountError('unavailable');
     this.sentCodes.push(email);
   }
 

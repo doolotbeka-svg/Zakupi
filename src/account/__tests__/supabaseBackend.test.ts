@@ -59,7 +59,12 @@ describe('преобразование ошибок', () => {
   it('ошибки входа', () => {
     expect(describeAuthError({ status: 429, code: 'over_email_send_rate_limit' }).kind).toBe('rate_limit');
     expect(describeAuthError({ status: 403, code: 'otp_expired', message: 'Token has expired or is invalid' }).kind).toBe('invalid_code');
-    expect(describeAuthError({ status: 400, code: 'email_address_invalid' }).kind).toBe('invalid_email');
+    expect(describeAuthError({ status: 400, code: 'email_address_invalid', message: 'Email address "x" is invalid' }).kind).toBe('invalid_email');
+    expect(
+      describeAuthError({ status: 400, code: 'email_address_not_authorized', message: 'Email address "a@b.kg" cannot be used as it is not authorized' }).kind
+    ).toBe('unavailable');
+    expect(describeAuthError({ status: 422, code: 'signup_disabled' }).kind).toBe('unavailable');
+    expect(describeAuthError({ status: 400, message: 'Email address "a@b.kg" cannot be used as it is not authorized' }).kind).toBe('unavailable');
     expect(describeAuthError({ name: 'AuthRetryableFetchError', message: 'Failed to fetch' }).kind).toBe('network');
     expect(describeAuthError({ status: 500, message: 'boom' }).kind).toBe('unknown');
   });
