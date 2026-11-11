@@ -22,6 +22,8 @@ const renderApp = async () => {
 const signIn = async (user: ReturnType<typeof userEvent.setup>, email = 'buyer@example.com') => {
   await user.click(screen.getByRole('button', { name: 'Войти' }));
   const dialog = screen.getByRole('dialog', { name: 'Аккаунт' });
+  // The form keeps the last email after signing out, so start from an empty field
+  await user.clear(within(dialog).getByLabelText('Email'));
   await user.type(within(dialog).getByLabelText('Email'), email);
   await user.click(within(dialog).getByRole('button', { name: 'Получить код' }));
   await user.type(await within(dialog).findByLabelText('Код из письма'), VALID_CODE);
@@ -132,16 +134,20 @@ describe('платный доступ', () => {
     expect(screen.getByRole('dialog', { name: 'Аккаунт' }).textContent).toMatch(/«Импорт и экспорт Excel» доступна по подписке/);
   });
 
-  it('после входа без подписки показывает тарифы и неактивную оплату', async () => {
+  it('после входа без подписки показывает тарифы с ценами', async () => {
     backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: null, plan: null };
     const user = await renderApp();
     const dialog = await signIn(user);
 
     expect(within(dialog).getByText('Подписки нет.')).toBeTruthy();
-    expect(within(dialog).getByText('1 месяц')).toBeTruthy();
-    expect(within(dialog).getByText('3 месяца')).toBeTruthy();
-    expect(within(dialog).getByText('12 месяцев')).toBeTruthy();
-    expect(within(dialog).getByRole('button', { name: 'Оплатить' })).toHaveProperty('disabled', true);
+    const plans = within(dialog).getAllByRole('radio').map(r => r.textContent?.replace(/\s+/g, ' '));
+    expect(plans).toEqual([
+      '1 месяц400 сом',
+      '3 месяца1 000 сом333 сом / мес',
+      '6 месяцев2 100 сом350 сом / мес',
+      '12 месяцев3 700 сом308 сом / мес'
+    ]);
+    expect(within(dialog).getByRole('button', { name: 'Перейти к оплате по QR' })).toBeTruthy();
   });
 
   it('с активной подпиской платные функции открываются', async () => {
@@ -213,5 +219,117 @@ describe('сохранённые расчёты в аккаунте', () => {
     expect(await screen.findByText('Не удалось сохранить расчёт в аккаунт')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: /Сохраненные расчеты/ }));
     expect(within(screen.getByRole('dialog', { name: 'Сохраненные расчеты' })).getByText('Нет сохраненных расчетов')).toBeTruthy();
+  });
+});
+
+describe('оплата по QR', () => {
+  const PAYWALL = { paywallEnabled: true, loginRequired: false, paidUntil: null, plan: null };
+
+  const startPayment = async (user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement, plan = '3 месяца') => {
+    await user.click(within(dialog).getByRole('radio', { name: new RegExp(plan) }));
+    await user.click(within(dialog).getByRole('button', { name: 'Перейти к оплате по QR' }));
+    await within(dialog).findByText('Оплата по QR');
+  };
+
+  it('показывает QR, сумму и код платежа выбранного тарифа', async () => {
+    backend.access = { ...PAYWALL };
+    const user = await renderApp();
+    const dialog = await signIn(user);
+    await startPayment(user, dialog);
+
+    const text = dialog.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(text).toContain('Сумма к оплате1 000 сом');
+    expect(text).toContain('Получатель: Доолотбек А (MBank)');
+    expect(within(dialog).getByRole('img', { name: 'QR-код для оплаты через MBank' }).getAttribute('src')).toBe('/payment/mbank-qr.jpg');
+    expect(within(dialog).getByRole('link', { name: 'Открыть в приложении банка' }).getAttribute('href')).toMatch(/^https:\/\/pay\.payqr\.kg\/qr\/#/);
+    expect(within(dialog).getByRole('link', { name: 'Скачать QR' }).hasAttribute('download')).toBe(true);
+    expect(within(dialog).getByRole('button', { name: /ZK-10001/ })).toBeTruthy();
+    expect(backend.payments).toMatchObject([{ plan: '3m', months: 3, amountKgs: 1000, status: 'pending', reportedAt: null }]);
+  });
+
+  it('«Я оплатил» отправляет заявку на проверку, и она сохраняется при повторном открытии', async () => {
+    backend.access = { ...PAYWALL };
+    const user = await renderApp();
+    const dialog = await signIn(user);
+    await startPayment(user, dialog, '1 месяц');
+
+    await user.type(within(dialog).getByLabelText(/Имя плательщика/), 'Азамат, 0395');
+    await user.click(within(dialog).getByRole('button', { name: 'Я оплатил' }));
+
+    expect(await within(dialog).findByText('Оплата проверяется')).toBeTruthy();
+    expect(backend.payments[0]).toMatchObject({ amountKgs: 400, payerNote: 'Азамат, 0395', status: 'pending' });
+    expect(backend.payments[0].reportedAt).not.toBeNull();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }));
+    await user.click(screen.getByRole('button', { name: 'Аккаунт' }));
+    expect(await within(screen.getByRole('dialog', { name: 'Аккаунт' })).findByText('Оплата проверяется')).toBeTruthy();
+  });
+
+  it('неоплаченную заявку можно отменить и выбрать другой тариф', async () => {
+    backend.access = { ...PAYWALL };
+    const user = await renderApp();
+    const dialog = await signIn(user);
+    await startPayment(user, dialog, '12 месяцев');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Отменить' }));
+    expect(await within(dialog).findByRole('button', { name: 'Перейти к оплате по QR' })).toBeTruthy();
+    expect(backend.payments[0].status).toBe('cancelled');
+  });
+
+  it('администратор подтверждает оплату, и подписка покупателя включается', async () => {
+    backend.access = { ...PAYWALL };
+    backend.admins.add('admin@example.com');
+    const user = await renderApp();
+
+    // Покупатель платит
+    let dialog = await signIn(user, 'buyer@example.com');
+    expect(within(dialog).queryByText(/Заявки на оплату/)).toBeNull();
+    await startPayment(user, dialog);
+    await user.click(within(dialog).getByRole('button', { name: 'Я оплатил' }));
+    await within(dialog).findByText('Оплата проверяется');
+    await user.click(within(dialog).getByRole('button', { name: 'Выйти' }));
+    await user.keyboard('{Escape}');
+
+    // Администратор подтверждает
+    dialog = await signIn(user, 'admin@example.com');
+    expect(await within(dialog).findByText('Заявки на оплату (1)')).toBeTruthy();
+    expect(dialog.textContent).toContain('buyer@example.com');
+    expect(dialog.textContent).toContain('Сообщил об оплате');
+    await user.click(within(dialog).getByRole('button', { name: 'Подтвердить' }));
+    expect(await within(dialog).findByText('Заявки на оплату (0)')).toBeTruthy();
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/Подтвердить оплату 1000 сом от buyer@example.com\? Подписка продлится на 3 месяца/));
+    await user.click(within(dialog).getByRole('button', { name: 'Выйти' }));
+    await user.keyboard('{Escape}');
+
+    // Покупатель видит активную подписку и пользуется платной функцией
+    dialog = await signIn(user, 'buyer@example.com');
+    expect(await within(dialog).findByText(/Активна до/)).toBeTruthy();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Печать отчета / PDF' }));
+    expect(screen.getByRole('dialog').textContent).toContain('КАРТА РЕНТАБЕЛЬНОСТИ ТЕНДЕРА');
+  });
+
+  it('отклонённая заявка возвращает покупателя к выбору тарифа', async () => {
+    backend.access = { ...PAYWALL };
+    backend.admins.add('admin@example.com');
+    const user = await renderApp();
+
+    let dialog = await signIn(user, 'buyer@example.com');
+    await startPayment(user, dialog);
+    await user.click(within(dialog).getByRole('button', { name: 'Я оплатил' }));
+    await within(dialog).findByText('Оплата проверяется');
+    await user.click(within(dialog).getByRole('button', { name: 'Выйти' }));
+    await user.keyboard('{Escape}');
+
+    dialog = await signIn(user, 'admin@example.com');
+    await within(dialog).findByText('Заявки на оплату (1)');
+    await user.click(within(dialog).getByRole('button', { name: 'Отклонить' }));
+    expect(await within(dialog).findByText('Заявки на оплату (0)')).toBeTruthy();
+    await user.click(within(dialog).getByRole('button', { name: 'Выйти' }));
+    await user.keyboard('{Escape}');
+
+    dialog = await signIn(user, 'buyer@example.com');
+    expect(await within(dialog).findByRole('button', { name: 'Перейти к оплате по QR' })).toBeTruthy();
+    expect(within(dialog).getByText('Подписки нет.')).toBeTruthy();
   });
 });
