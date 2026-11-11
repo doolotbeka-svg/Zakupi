@@ -5,7 +5,7 @@ import { useAccount } from '../account/AccountContext';
 import { daysLeft, isValidCode, isValidEmail, normalizeCode, subscriptionStatus } from '../account/access';
 import { AccountError } from '../account/backend';
 import { FEATURE_NAMES } from '../config/plans';
-import { AdminPayments, PaymentSection } from './PaymentSection';
+import { AdminLink, PaymentSection } from './PaymentSection';
 import { AlertCircle, CheckCircle2, Cloud, Lock, LogOut, Mail, X } from 'lucide-react';
 
 const RESEND_SECONDS = 60;
@@ -300,7 +300,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
                 </p>
               )}
 
-              <AdminPayments lang={lang} />
+              <AdminLink lang={lang} />
 
               <button
                 type="button"
