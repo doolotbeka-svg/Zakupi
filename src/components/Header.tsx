@@ -1,7 +1,7 @@
 import React from 'react';
 import { CurrencySymbol, Language } from '../types';
 import { translations } from '../i18n/translations';
-import { RotateCcw, Printer, BookmarkCheck } from 'lucide-react';
+import { RotateCcw, Printer, BookmarkCheck, Save } from 'lucide-react';
 
 interface HeaderProps {
   lang: Language;
@@ -10,6 +10,8 @@ interface HeaderProps {
   onCurrencyChange: (c: CurrencySymbol) => void;
   onReset: () => void;
   onOpenTemplates: () => void;
+  onOpenSaved: () => void;
+  savedCount: number;
   onPrint: () => void;
 }
 
@@ -20,15 +22,17 @@ export const Header: React.FC<HeaderProps> = ({
   onCurrencyChange,
   onReset,
   onOpenTemplates,
+  onOpenSaved,
+  savedCount,
   onPrint
 }) => {
   const t = translations[lang];
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-30 shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-1.5 sm:gap-4">
         {/* Zone 1: Brand & Wordmark */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0 max-[359px]:hidden">
           <div className="w-9 h-9 shrink-0 rounded-md bg-emerald-600 flex items-center justify-center font-bold text-white shadow-sm ring-1 ring-emerald-400/30">
             <span className="text-sm font-mono tracking-tighter">KG</span>
           </div>
@@ -52,39 +56,55 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onOpenTemplates}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-lg:px-2"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-xl:px-2 max-sm:px-1.5"
             title={t.loadTemplates}
             aria-label={t.loadTemplates}
           >
             <BookmarkCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden lg:inline">{t.loadTemplates}</span>
+            <span className="hidden xl:inline">{t.loadTemplates}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenSaved}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-xl:px-2 max-sm:px-1.5"
+            title={t.savedScenariosTitle}
+            aria-label={t.savedScenariosTitle}
+          >
+            <Save className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden xl:inline">{t.savedScenariosTitle}</span>
+            {savedCount > 0 && (
+              <span className="max-[359px]:hidden font-mono text-[10px] leading-none px-1.5 py-0.5 rounded bg-emerald-600 text-white">
+                {savedCount}
+              </span>
+            )}
           </button>
 
           <button
             type="button"
             onClick={onPrint}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-lg:px-2"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-xl:px-2 max-sm:px-1.5"
             title={t.printReport}
             aria-label={t.printReport}
           >
             <Printer className="w-3.5 h-3.5 text-slate-400" />
-            <span className="hidden lg:inline">{t.printReport}</span>
+            <span className="hidden xl:inline">{t.printReport}</span>
           </button>
 
           <button
             type="button"
             onClick={onReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-xl:px-2 max-sm:px-1.5"
             title={t.resetData}
             aria-label={t.resetData}
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">{t.resetData}</span>
+            <span className="hidden xl:inline">{t.resetData}</span>
           </button>
         </div>
 
         {/* Zone 3: Language & Currency controls (Right-aligned) */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {/* Currency format toggle: KGS and RUB */}
           <div className="flex items-center bg-slate-800 p-0.5 rounded-md border border-slate-700/70 text-xs font-mono">
             <button
@@ -116,7 +136,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={() => onLanguageChange('ky')}
-              className={`px-2.5 py-1 rounded transition-all cursor-pointer ${
+              className={`px-2.5 max-sm:px-2 py-1 rounded transition-all cursor-pointer ${
                 lang === 'ky'
                   ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs'
                   : 'text-emerald-300 hover:text-white'
@@ -128,7 +148,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={() => onLanguageChange('ru')}
-              className={`px-2.5 py-1 rounded transition-all cursor-pointer ${
+              className={`px-2.5 max-sm:px-2 py-1 rounded transition-all cursor-pointer ${
                 lang === 'ru'
                   ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs'
                   : 'text-emerald-300 hover:text-white'
