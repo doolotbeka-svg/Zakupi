@@ -92,7 +92,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
             <label htmlFor="plannedPrice" className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <span>{t.plannedPriceLabel}</span>
             </label>
-            <span className="text-xs font-mono text-slate-400">{currency}</span>
+            <span className="text-xs font-mono text-slate-400">KGS</span>
           </div>
           <div className="relative">
             <input
@@ -176,7 +176,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
               <Layers className="w-3.5 h-3.5 text-slate-600" />
               <span>{t.directGoodsCostLabel}</span>
             </label>
-            <span className="text-xs font-mono text-slate-400">{currency}</span>
+            <span className="text-xs font-mono text-slate-400">KGS</span>
           </div>
           <div className="relative">
             <input
@@ -216,7 +216,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
               <Truck className="w-3.5 h-3.5 text-slate-600" />
               <span>{t.logisticsLabel}</span>
             </label>
-            <span className="text-xs font-mono text-slate-400">{currency}</span>
+            <span className="text-xs font-mono text-slate-400">KGS</span>
           </div>
           <input
             id="logisticsCost"
@@ -252,6 +252,8 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
                 title={t.guaranteeTypePercent}
+                aria-label={t.guaranteeTypePercent}
+                aria-pressed={params.guaranteeType === 'percent'}
               >
                 %
               </button>
@@ -264,8 +266,10 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
                 title={t.guaranteeTypeFixed}
+                aria-label={t.guaranteeTypeFixed}
+                aria-pressed={params.guaranteeType === 'fixed'}
               >
-                {currency}
+                KGS
               </button>
             </div>
           </div>
@@ -301,7 +305,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
               <Percent className="w-3.5 h-3.5 text-slate-600" />
               <span>{t.otherExpensesLabel}</span>
             </label>
-            <span className="text-xs font-mono text-slate-400">{currency}</span>
+            <span className="text-xs font-mono text-slate-400">KGS</span>
           </div>
           <input
             id="otherExpenses"

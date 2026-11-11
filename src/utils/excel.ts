@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { CalculationResult, CurrencySymbol, Language, SpecificationItem, TenderParams } from '../types';
 import { TAX_REGIMES } from './taxCalculator';
+import { convertFromKgs, getKgsPerRub } from './currency';
 
 /**
  * Exports complete tender financial calculation and product specification into an Excel (.xlsx) file.
@@ -16,43 +17,46 @@ export function exportTenderToExcel(
 
   const isKy = lang === 'ky';
   const regime = TAX_REGIMES[params.taxRegime];
+  // Amounts are calculated in soms; export them in the selected display currency
+  const money = (amountKgs: number) => Math.round(convertFromKgs(amountKgs, currency) * 100) / 100;
 
   // 1. Financial Overview Sheet Data
   const financialData: (string | number)[][] = [
     [isKy ? 'ТЕНДЕРДИК РЕНТАБЕЛДҮҮЛҮК ЭСЕБИ (КЫРГЫЗСТАН)' : 'РАСЧЕТ РЕНТАБЕЛЬНОСТИ ТЕНДЕРА (КЫРГЫЗСТАН)'],
     [isKy ? `Түзүлгөн күнү: ${new Date().toLocaleDateString('ru-RU')}` : `Дата формирования: ${new Date().toLocaleDateString('ru-RU')}`],
     [isKy ? `Валюта: ${currency}` : `Валюта расчетов: ${currency}`],
+    ...(currency === 'RUB' ? [[`1 RUB = ${getKgsPerRub()} KGS`]] : []),
     [''],
     [isKy ? '1. НЕГИЗГИ ПАРАМЕТРЛЕР ЖАНА БАА' : '1. ОСНОВНЫЕ ПАРАМЕТРЫ И ЦЕНА', ''],
-    [isKy ? `Пландалган сатып алуу суммасы (${currency})` : `Планируемая сумма закупки (${currency})`, params.plannedPrice],
+    [isKy ? `Пландалган сатып алуу суммасы (${currency})` : `Планируемая сумма закупки (${currency})`, money(params.plannedPrice)],
     [isKy ? 'Тооруктагы бааны төмөндөтүү (%)' : 'Процент снижения цены на торгах (%)', `${result.discountPercent}%`],
-    [isKy ? `Төмөндөтүлгөн сумма (${currency})` : `Сумма снижения цены (${currency})`, result.priceDropSum],
-    [isKy ? `Келишимдин акыркы баасы (${currency})` : `Итоговая цена контракта (${currency})`, result.finalContractPrice],
+    [isKy ? `Төмөндөтүлгөн сумма (${currency})` : `Сумма снижения цены (${currency})`, money(result.priceDropSum)],
+    [isKy ? `Келишимдин акыркы баасы (${currency})` : `Итоговая цена контракта (${currency})`, money(result.finalContractPrice)],
     [isKy ? 'Салык режими' : 'Налоговый режим', regime.name[lang]],
     [''],
     [isKy ? '2. ӨЗДҮК НАРК ЖАНА ЧЫГЫМДАР' : '2. СЕБЕСТОИМОСТЬ И РАСХОДЫ', ''],
-    [isKy ? `Товарлардын сатып алуу өздүк наркы (${currency})` : `Закупочная себестоимость товаров (${currency})`, result.totalGoodsCost],
-    [isKy ? `Логистика жана жеткирүү (${currency})` : `Логистика и доставка (${currency})`, result.logisticsCost],
-    [isKy ? `Кепилдик камсыздоо / Банктык кепилдик (${currency})` : `Гарантийное обеспечение / Банк (${currency})`, result.guaranteeCost],
-    [isKy ? `Башка чыгашалар (${currency})` : `Прочие расходы (${currency})`, result.otherCost],
-    [isKy ? `ЖАЛПЫ ЧЫГЫМДАР (Өздүк нарк, ${currency})` : `ИТОГО РАСХОДЫ (Себестоимость, ${currency})`, result.totalExpenses],
+    [isKy ? `Товарлардын сатып алуу өздүк наркы (${currency})` : `Закупочная себестоимость товаров (${currency})`, money(result.totalGoodsCost)],
+    [isKy ? `Логистика жана жеткирүү (${currency})` : `Логистика и доставка (${currency})`, money(result.logisticsCost)],
+    [isKy ? `Кепилдик камсыздоо / Банктык кепилдик (${currency})` : `Гарантийное обеспечение / Банк (${currency})`, money(result.guaranteeCost)],
+    [isKy ? `Башка чыгашалар (${currency})` : `Прочие расходы (${currency})`, money(result.otherCost)],
+    [isKy ? `ЖАЛПЫ ЧЫГЫМДАР (Өздүк нарк, ${currency})` : `ИТОГО РАСХОДЫ (Себестоимость, ${currency})`, money(result.totalExpenses)],
     [''],
     [isKy ? '3. САЛЫКТАР ЖАНА БЮДЖЕТТИК ТӨЛӨМДӨР' : '3. НАЛОГИ И ОБЯЗАТЕЛЬНЫЕ ПЛАТЕЖИ', ''],
-    [isKy ? `Чыгуучу КНС 12% (${currency})` : `Исходящий НДС 12% (${currency})`, result.taxes.vatOutput],
-    [isKy ? `Кирүүчү КНС (эсепке алуу / зачет) (${currency})` : `Входящий НДС (к зачету) (${currency})`, result.taxes.vatInput],
-    [isKy ? `Бюджетке төлөнүүчү КНС (${currency})` : `НДС к уплате в бюджет (${currency})`, result.taxes.vat],
-    [isKy ? `Сатуудан салык / НсП 1% (${currency})` : `Налог с продаж / НсП 1% (${currency})`, result.taxes.salesTax],
-    [isKy ? `Пайда салыгы / Налог на прибыль 10% (${currency})` : `Налог на прибыль 10% (${currency})`, result.taxes.profitTax],
-    [isKy ? `Бирдиктүү салык (${currency})` : `Единый налог (${currency})`, result.taxes.unifiedTax],
-    [isKy ? `Өз алдынча киргизилген салык (${currency})` : `Индивидуальный налог (${currency})`, result.taxes.customTax],
-    [isKy ? `ИТОГО САЛЫКТАР (${currency})` : `ИТОГО НАЛОГИ (${currency})`, result.taxes.totalTax],
+    [isKy ? `Чыгуучу КНС 12% (${currency})` : `Исходящий НДС 12% (${currency})`, money(result.taxes.vatOutput)],
+    [isKy ? `Кирүүчү КНС (эсепке алуу / зачет) (${currency})` : `Входящий НДС (к зачету) (${currency})`, money(result.taxes.vatInput)],
+    [isKy ? `Бюджетке төлөнүүчү КНС (${currency})` : `НДС к уплате в бюджет (${currency})`, money(result.taxes.vat)],
+    [isKy ? `Сатуудан салык / НсП 1% (${currency})` : `Налог с продаж / НсП 1% (${currency})`, money(result.taxes.salesTax)],
+    [isKy ? `Пайда салыгы / Налог на прибыль 10% (${currency})` : `Налог на прибыль 10% (${currency})`, money(result.taxes.profitTax)],
+    [isKy ? `Бирдиктүү салык (${currency})` : `Единый налог (${currency})`, money(result.taxes.unifiedTax)],
+    [isKy ? `Өз алдынча киргизилген салык (${currency})` : `Индивидуальный налог (${currency})`, money(result.taxes.customTax)],
+    [isKy ? `ИТОГО САЛЫКТАР (${currency})` : `ИТОГО НАЛОГИ (${currency})`, money(result.taxes.totalTax)],
     [''],
     [isKy ? '4. КАРЖЫЛЫК ЖЫЙЫНТЫК ЖАНА ЧЫГЫМСЫЗДЫК' : '4. ФИНАНСОВЫЙ ИТОГ И БЕЗУБЫТОЧНОСТЬ', ''],
-    [isKy ? `ТАЗА КИРЕШЕ / ЧИСТАЯ ПРИБЫЛЬ (${currency})` : `ЧИСТАЯ ПРИБЫЛЬ / ТАЗА КИРЕШЕ (${currency})`, result.netProfit],
+    [isKy ? `ТАЗА КИРЕШЕ / ЧИСТАЯ ПРИБЫЛЬ (${currency})` : `ЧИСТАЯ ПРИБЫЛЬ / ТАЗА КИРЕШЕ (${currency})`, money(result.netProfit)],
     [isKy ? 'Рентабелдүүлүк (кирешеден %)' : 'Рентабельность (% от цены контракта)', `${result.profitabilityPercent.toFixed(2)}%`],
     [isKy ? 'Чыгымдардын рентабелдүүлүгү (ROI %)' : 'Рентабельность расходов (ROI %)', `${result.roiPercent.toFixed(2)}%`],
     [isKy ? 'Чыгымсыздык чекити (макс. арзандатуу %)' : 'Точка безубыточности (макс. % снижения)', `${result.breakEvenDiscount}%`],
-    [isKy ? `Чыгымсыздык минималдуу баасы (${currency})` : `Минимальная цена безубыточности (${currency})`, result.breakEvenPrice],
+    [isKy ? `Чыгымсыздык минималдуу баасы (${currency})` : `Минимальная цена безубыточности (${currency})`, money(result.breakEvenPrice)],
     [isKy ? 'Абалы' : 'Статус', result.isProfitable ? (isKy ? 'Пайдалуу' : 'Прибыльно') : (isKy ? 'Чыгым / Убыток' : 'Убыточно')]
   ];
 
@@ -75,8 +79,8 @@ export function exportTenderToExcel(
     item.name,
     item.unit,
     item.quantity,
-    item.unitPrice,
-    item.total
+    money(item.unitPrice),
+    money(item.total)
   ]);
 
   // Add summary row
@@ -88,7 +92,7 @@ export function exportTenderToExcel(
     '',
     totalUnits,
     '',
-    totalCost
+    money(totalCost)
   ]);
 
   const wsSpec = XLSX.utils.aoa_to_sheet([specHeaders, ...specRows]);
