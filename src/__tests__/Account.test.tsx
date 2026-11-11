@@ -119,7 +119,7 @@ describe('платный доступ', () => {
   });
 
   it('при включённом переключателе без подписки предлагает войти и оформить подписку', async () => {
-    backend.access = { paywallEnabled: true, paidUntil: null, plan: null };
+    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: null, plan: null };
     const user = await renderApp();
 
     await user.click(screen.getByRole('button', { name: 'Печать отчета / PDF' }));
@@ -133,7 +133,7 @@ describe('платный доступ', () => {
   });
 
   it('после входа без подписки показывает тарифы и неактивную оплату', async () => {
-    backend.access = { paywallEnabled: true, paidUntil: null, plan: null };
+    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: null, plan: null };
     const user = await renderApp();
     const dialog = await signIn(user);
 
@@ -145,7 +145,7 @@ describe('платный доступ', () => {
   });
 
   it('с активной подпиской платные функции открываются', async () => {
-    backend.access = { paywallEnabled: true, paidUntil: inAMonth(), plan: 'manual' };
+    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: inAMonth(), plan: 'manual' };
     const user = await renderApp();
     const dialog = await signIn(user);
     expect(within(dialog).getByText(/Активна до/)).toBeTruthy();

@@ -111,12 +111,40 @@ describe('createSupabaseBackend', () => {
 
   it('читает переключатель и подписку', async () => {
     const { client } = fakeClient({
-      app_settings: { data: { paywall_enabled: true }, error: null },
+      app_settings: { data: { paywall_enabled: true, login_required: true }, error: null },
       subscriptions: { data: { paid_until: '2026-12-11T00:00:00Z', plan: '1m' }, error: null }
     });
     const backend = createSupabaseBackend('u', 'k', client);
-    expect(await backend.getAccess({ id: 'u1', email: 'a@b.kg' })).toEqual({ paywallEnabled: true, paidUntil: '2026-12-11T00:00:00Z', plan: '1m' });
-    expect(await backend.getAccess(null)).toEqual({ paywallEnabled: true, paidUntil: null, plan: null });
+    expect(await backend.getAccess({ id: 'u1', email: 'a@b.kg' })).toEqual({
+      paywallEnabled: true,
+      loginRequired: true,
+      paidUntil: '2026-12-11T00:00:00Z',
+      plan: '1m'
+    });
+    expect(await backend.getAccess(null)).toEqual({ paywallEnabled: true, loginRequired: true, paidUntil: null, plan: null });
+  });
+
+  it('без колонки login_required (старая схема базы) считает вход необязательным', async () => {
+    const calls: unknown[][] = [];
+    const responses = [
+      { data: null, error: { code: '42703', message: 'column app_settings.login_required does not exist' } },
+      { data: { paywall_enabled: false }, error: null }
+    ];
+    const client = {
+      auth: {},
+      from: (table: string) => {
+        calls.push(['from', table]);
+        return fakeQuery(responses.shift(), calls);
+      }
+    } as unknown as SupabaseClient;
+
+    expect(await createSupabaseBackend('u', 'k', client).getAccess(null)).toEqual({
+      paywallEnabled: false,
+      loginRequired: false,
+      paidUntil: null,
+      plan: null
+    });
+    expect(calls.filter(c => c[0] === 'select').map(c => c[1])).toEqual(['paywall_enabled, login_required', 'paywall_enabled']);
   });
 
   it('сохраняет, читает и удаляет расчёты только своего пользователя', async () => {
