@@ -40,6 +40,7 @@ export function describeAuthError(error: ErrorLike): AccountError {
 
 /** Maps database (PostgREST) errors. 42501 is a row level security refusal: no subscription. */
 export function describeDbError(error: ErrorLike): AccountError {
+  if (error.code === '28000') return new AccountError('admin_session', error.message);
   if (error.code === '42501' || error.code === 'P0001') return new AccountError('forbidden', error.message);
   if (/fetch|network/i.test(error.message ?? '')) return new AccountError('network', error.message);
   return new AccountError('unknown', error.message);
@@ -268,72 +269,79 @@ export function createSupabaseBackend(url: string, key: string, client?: Supabas
       return data === true;
     },
 
-    async listOpenPayments() {
-      const { data, error } = await supabase
-        .from('payment_requests')
-        .select(PAYMENT_COLUMNS)
-        .eq('status', 'pending')
-        .order('reported_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
-        .limit(100);
+    async adminPasswordIsSet() {
+      const { data, error } = await supabase.rpc('admin_password_is_set');
+      if (error) throw describeDbError(error);
+      return data === true;
+    },
+
+    async adminUnlock(password) {
+      const { data, error } = await supabase.rpc('admin_unlock', { p_password: password });
+      if (error) throw describeDbError(error);
+      const row = (Array.isArray(data) ? data[0] : data) as { session_token?: unknown; locked?: unknown } | null;
+      return {
+        token: typeof row?.session_token === 'string' ? row.session_token : null,
+        locked: row?.locked === true
+      };
+    },
+
+    async adminSetPassword(newPassword, currentPassword) {
+      const { data, error } = await supabase.rpc('admin_set_password', { p_new: newPassword, p_current: currentPassword });
+      if (error) throw describeDbError(error);
+      return typeof data === 'string' ? data : null;
+    },
+
+    async listAdminPayments(token, openOnly) {
+      const { data, error } = await supabase.rpc('admin_list_payments', { p_token: token, p_open_only: openOnly });
       if (error) throw describeDbError(error);
       return (Array.isArray(data) ? data : []).map(rowToPayment).filter((p): p is PaymentRequest => p !== null);
     },
 
-    async approvePayment(id) {
-      const { data, error } = await supabase.rpc('approve_payment_request', { p_id: id });
+    async approvePayment(token, id) {
+      const { data, error } = await supabase.rpc('approve_payment_request', { p_token: token, p_id: id });
       if (error) throw describeDbError(error);
       return typeof data === 'string' ? data : '';
     },
 
-    async rejectPayment(id) {
-      const { error } = await supabase.rpc('reject_payment_request', { p_id: id });
+    async rejectPayment(token, id) {
+      const { error } = await supabase.rpc('reject_payment_request', { p_token: token, p_id: id });
       if (error) throw describeDbError(error);
     },
 
-    async listRecentPayments() {
-      const { data, error } = await supabase
-        .from('payment_requests')
-        .select(PAYMENT_COLUMNS)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (error) throw describeDbError(error);
-      return (Array.isArray(data) ? data : []).map(rowToPayment).filter((p): p is PaymentRequest => p !== null);
-    },
-
-    async updateSettings(changes) {
+    async updateSettings(token, changes) {
       const { error } = await supabase.rpc('admin_update_settings', {
+        p_token: token,
         p_paywall: changes.paywallEnabled ?? null,
         p_login_required: changes.loginRequired ?? null
       });
       if (error) throw describeDbError(error);
     },
 
-    async adminListPlans() {
-      const { data, error } = await supabase.rpc('admin_list_plans');
+    async adminListPlans(token) {
+      const { data, error } = await supabase.rpc('admin_list_plans', { p_token: token });
       if (error) throw describeDbError(error);
       return rowsToAdminPlans(data);
     },
 
-    async updatePlan(id, priceKgs, active) {
-      const { error } = await supabase.rpc('admin_update_plan', { p_id: id, p_price_kgs: priceKgs, p_active: active });
+    async updatePlan(token, id, priceKgs, active) {
+      const { error } = await supabase.rpc('admin_update_plan', { p_token: token, p_id: id, p_price_kgs: priceKgs, p_active: active });
       if (error) throw describeDbError(error);
     },
 
-    async listUsers(search) {
-      const { data, error } = await supabase.rpc('admin_list_users', { p_search: search.trim() || null });
+    async listUsers(token, search) {
+      const { data, error } = await supabase.rpc('admin_list_users', { p_token: token, p_search: search.trim() || null });
       if (error) throw describeDbError(error);
       return rowsToAdminUsers(data);
     },
 
-    async extendSubscription(userId, months) {
-      const { data, error } = await supabase.rpc('admin_extend_subscription', { p_user: userId, p_months: months });
+    async extendSubscription(token, userId, months) {
+      const { data, error } = await supabase.rpc('admin_extend_subscription', { p_token: token, p_user: userId, p_months: months });
       if (error) throw describeDbError(error);
       return typeof data === 'string' ? data : '';
     },
 
-    async setSubscription(userId, paidUntil) {
-      const { error } = await supabase.rpc('admin_set_subscription', { p_user: userId, p_paid_until: paidUntil });
+    async setSubscription(token, userId, paidUntil) {
+      const { error } = await supabase.rpc('admin_set_subscription', { p_token: token, p_user: userId, p_paid_until: paidUntil });
       if (error) throw describeDbError(error);
     }
   };

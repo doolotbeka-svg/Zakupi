@@ -262,26 +262,18 @@ export const PaymentSection: React.FC<{ lang: Language }> = ({ lang }) => {
   );
 };
 
-/** Administrator: link to the admin panel with the number of new payment requests. */
+/** Administrator: link to the admin panel. */
 export const AdminLink: React.FC<{ lang: Language }> = ({ lang }) => {
   const { backend, user } = useAccount();
   const L = useL(lang);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [openCount, setOpenCount] = useState(0);
 
   useEffect(() => {
     if (!backend || !user) return;
     let active = true;
     backend
       .isAdmin()
-      .then(async admin => {
-        if (!active) return;
-        setIsAdmin(admin);
-        if (admin) {
-          const open = await backend.listOpenPayments();
-          if (active) setOpenCount(open.length);
-        }
-      })
+      .then(admin => active && setIsAdmin(admin))
       .catch(() => {});
     return () => {
       active = false;
@@ -293,17 +285,10 @@ export const AdminLink: React.FC<{ lang: Language }> = ({ lang }) => {
   return (
     <a
       href="/#admin"
-      className="flex items-center justify-between gap-2 p-3 rounded-md border border-slate-300 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-900"
+      className="flex items-center gap-2 p-3 rounded-md border border-slate-300 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-900"
     >
-      <span className="flex items-center gap-2">
-        <ShieldCheck className="w-4 h-4 text-slate-600" />
-        {L('Админ-панель', 'Админ-панель')}
-      </span>
-      {openCount > 0 && (
-        <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-xs">
-          {L(`${openCount} жаңы өтүнмө`, `${openCount} новых заявок`)}
-        </span>
-      )}
+      <ShieldCheck className="w-4 h-4 text-slate-600" />
+      {L('Админ-панель', 'Админ-панель')}
     </a>
   );
 };

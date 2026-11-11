@@ -276,7 +276,7 @@ describe('оплата по QR', () => {
     expect(backend.payments[0].status).toBe('cancelled');
   });
 
-  it('администратор видит в окне аккаунта ссылку на админ-панель с числом новых заявок', async () => {
+  it('администратор видит в окне аккаунта ссылку на админ-панель', async () => {
     backend.access = { ...PAYWALL };
     backend.admins.add('admin@example.com');
     const user = await renderApp();
@@ -292,6 +292,43 @@ describe('оплата по QR', () => {
     dialog = await signIn(user, 'admin@example.com');
     const link = await within(dialog).findByRole('link', { name: /Админ-панель/ });
     expect(link.getAttribute('href')).toBe('/#admin');
-    expect(await within(link).findByText('1 новых заявок')).toBeTruthy();
+  });
+});
+
+describe('напоминание об окончании подписки на сайте', () => {
+  const inDays = (days: number) => new Date(Date.now() + days * 86_400_000 - 60_000).toISOString();
+
+  afterEach(() => sessionStorage.clear());
+
+  it('за 3 дня до конца показывает плашку с кнопкой «Продлить»', async () => {
+    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: inDays(2), plan: '1m' };
+    const user = await renderApp();
+    expect(screen.queryByText(/Подписка заканчивается/)).toBeNull();
+
+    const dialog = await signIn(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }));
+    const banner = await screen.findByText(/Подписка заканчивается через 2 дн\./);
+    await user.click(within(banner.parentElement!).getByRole('button', { name: 'Продлить' }));
+    expect(screen.getByRole('dialog', { name: 'Аккаунт' })).toBeTruthy();
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Скрыть напоминание' }));
+    expect(screen.queryByText(/Подписка заканчивается/)).toBeNull();
+  });
+
+  it('за неделю до конца плашки нет', async () => {
+    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: inDays(7), plan: '1m' };
+    const user = await renderApp();
+    const dialog = await signIn(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }));
+    expect(screen.queryByText(/Подписка заканчивается/)).toBeNull();
+  });
+
+  it('после окончания подписки при платном доступе сообщает, что она закончилась', async () => {
+    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: inDays(-5), plan: '1m' };
+    const user = await renderApp();
+    const dialog = await signIn(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }));
+    expect(await screen.findByText(/Подписка закончилась/)).toBeTruthy();
   });
 });

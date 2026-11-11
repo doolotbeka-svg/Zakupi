@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAccount } from '../account/AccountContext';
-import { AdminPlan, AdminUser, PaymentRequest } from '../account/backend';
+import { AccountError, AdminPlan, AdminUser, PaymentRequest } from '../account/backend';
 import { subscriptionStatus } from '../account/access';
 import { AccountModal } from './AccountModal';
 import { monthsLabel } from './PaymentSection';
-import { AlertCircle, ArrowLeft, Check, CreditCard, LogIn, LogOut, RefreshCw, Search, Settings, ShieldCheck, Tags, Users, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Check, CreditCard, KeyRound, Lock, LogIn, LogOut, RefreshCw, Search, Settings, ShieldCheck, Tags, Users, X } from 'lucide-react';
 
 type Tab = 'payments' | 'users' | 'plans' | 'settings';
 
@@ -30,8 +30,35 @@ const Notice: React.FC<{ text: string | null; ok?: boolean }> = ({ text, ok }) =
 
 const FAILED = 'Не удалось выполнить действие. Попробуйте ещё раз.';
 
+/** The session key from the panel password, kept for this browser tab only */
+const SESSION_KEY = 'kg_admin_session_v1';
+const readSession = () => {
+  try {
+    return sessionStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+};
+const writeSession = (token: string | null) => {
+  try {
+    if (token) sessionStorage.setItem(SESSION_KEY, token);
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+/** Props shared by the panel sections */
+interface TabProps {
+  token: string;
+  /** The session key expired: ask for the password again */
+  onExpired: () => void;
+}
+
+const isExpired = (error: unknown) => error instanceof AccountError && error.kind === 'admin_session';
+
 /** Payment requests: new ones with approve / reject, and recent history. */
-const PaymentsTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
+const PaymentsTab: React.FC<TabProps & { onChanged: () => void }> = ({ token, onExpired, onChanged }) => {
   const { backend, refreshAccess } = useAccount();
   const [view, setView] = useState<'open' | 'all'>('open');
   const [items, setItems] = useState<PaymentRequest[] | null>(null);
@@ -41,13 +68,14 @@ const PaymentsTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
   const load = useCallback(async () => {
     if (!backend) return;
     try {
-      setItems(view === 'open' ? await backend.listOpenPayments() : await backend.listRecentPayments());
+      setItems(await backend.listAdminPayments(token, view === 'open'));
     } catch (error) {
+      if (isExpired(error)) return onExpired();
       console.error(error);
       setItems([]);
       setMessage({ text: 'Не удалось загрузить заявки.' });
     }
-  }, [backend, view]);
+  }, [backend, view, token, onExpired]);
 
   useEffect(() => {
     void load();
@@ -64,16 +92,17 @@ const PaymentsTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
     setMessage(null);
     try {
       if (approve) {
-        const until = await backend.approvePayment(request.id);
+        const until = await backend.approvePayment(token, request.id);
         setMessage({ text: `Оплата подтверждена. Подписка ${request.email} — до ${date(until)}.`, ok: true });
       } else {
-        await backend.rejectPayment(request.id);
+        await backend.rejectPayment(token, request.id);
         setMessage({ text: `Заявка ${request.reference} отклонена.`, ok: true });
       }
       await load();
       onChanged();
       await refreshAccess();
     } catch (error) {
+      if (isExpired(error)) return onExpired();
       console.error(error);
       setMessage({ text: FAILED });
     } finally {
@@ -160,7 +189,7 @@ const PaymentsTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
 };
 
 /** Users: search, subscription status and manual changes. */
-const UsersTab: React.FC = () => {
+const UsersTab: React.FC<TabProps> = ({ token, onExpired }) => {
   const { backend, refreshAccess } = useAccount();
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState<AdminUser[] | null>(null);
@@ -172,14 +201,15 @@ const UsersTab: React.FC = () => {
     async (search: string) => {
       if (!backend) return;
       try {
-        setUsers(await backend.listUsers(search));
+        setUsers(await backend.listUsers(token, search));
       } catch (error) {
+        if (isExpired(error)) return onExpired();
         console.error(error);
         setUsers([]);
         setMessage({ text: 'Не удалось загрузить пользователей.' });
       }
     },
-    [backend]
+    [backend, token, onExpired]
   );
 
   useEffect(() => {
@@ -197,6 +227,7 @@ const UsersTab: React.FC = () => {
       await load(query);
       await refreshAccess();
     } catch (error) {
+      if (isExpired(error)) return onExpired();
       console.error(error);
       setMessage({ text: FAILED });
     } finally {
@@ -266,7 +297,7 @@ const UsersTab: React.FC = () => {
                       disabled={disabled}
                       onClick={() =>
                         void act(user, async () => {
-                          const until = await backend.extendSubscription(user.id, months);
+                          const until = await backend.extendSubscription(token, user.id, months);
                           return `${user.email}: подписка продлена до ${date(until)}.`;
                         })
                       }
@@ -289,7 +320,7 @@ const UsersTab: React.FC = () => {
                       void act(user, async () => {
                         // End of the chosen day, local time
                         const until = new Date(`${dates[user.id]}T23:59:59`).toISOString();
-                        await backend.setSubscription(user.id, until);
+                        await backend.setSubscription(token, user.id, until);
                         setDates(d => ({ ...d, [user.id]: '' }));
                         return `${user.email}: подписка до ${date(until)}.`;
                       })
@@ -305,7 +336,7 @@ const UsersTab: React.FC = () => {
                       onClick={() => {
                         if (!window.confirm(`Отключить подписку ${user.email}?`)) return;
                         void act(user, async () => {
-                          await backend.setSubscription(user.id, null);
+                          await backend.setSubscription(token, user.id, null);
                           return `${user.email}: подписка отключена.`;
                         });
                       }}
@@ -325,7 +356,7 @@ const UsersTab: React.FC = () => {
 };
 
 /** Plans: prices and visibility. */
-const PlansTab: React.FC = () => {
+const PlansTab: React.FC<TabProps> = ({ token, onExpired }) => {
   const { backend } = useAccount();
   const [plans, setPlans] = useState<AdminPlan[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { price: string; active: boolean }>>({});
@@ -334,15 +365,16 @@ const PlansTab: React.FC = () => {
   const load = useCallback(async () => {
     if (!backend) return;
     try {
-      const list = await backend.adminListPlans();
+      const list = await backend.adminListPlans(token);
       setPlans(list);
       setDrafts(Object.fromEntries(list.map(p => [p.id, { price: String(p.priceKgs), active: p.active }])));
     } catch (error) {
+      if (isExpired(error)) return onExpired();
       console.error(error);
       setPlans([]);
       setMessage({ text: 'Не удалось загрузить тарифы.' });
     }
-  }, [backend]);
+  }, [backend, token, onExpired]);
 
   useEffect(() => {
     void load();
@@ -359,10 +391,11 @@ const PlansTab: React.FC = () => {
     }
     setMessage(null);
     try {
-      await backend.updatePlan(plan.id, price, draft.active);
+      await backend.updatePlan(token, plan.id, price, draft.active);
       setMessage({ text: `Тариф «${monthsLabel(plan.months, 'ru')}» сохранён.`, ok: true });
       await load();
     } catch (error) {
+      if (isExpired(error)) return onExpired();
       console.error(error);
       setMessage({ text: FAILED });
     }
@@ -426,8 +459,12 @@ const PlansTab: React.FC = () => {
 };
 
 /** Site switches: paid access and required login. */
-const SettingsTab: React.FC = () => {
+const SettingsTab: React.FC<TabProps & { onNewSession: (token: string) => void }> = ({ token, onExpired, onNewSession }) => {
   const { backend, access, refreshAccess } = useAccount();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const [pwMessage, setPwMessage] = useState<{ text: string; ok?: boolean } | null>(null);
   const [message, setMessage] = useState<{ text: string; ok?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   if (!backend) return null;
@@ -437,12 +474,38 @@ const SettingsTab: React.FC = () => {
     setBusy(true);
     setMessage(null);
     try {
-      await backend.updateSettings({ [key]: next });
+      await backend.updateSettings(token, { [key]: next });
       await refreshAccess();
       setMessage({ text: 'Сохранено. Посетители увидят изменение при следующей загрузке страницы.', ok: true });
     } catch (error) {
+      if (isExpired(error)) return onExpired();
       console.error(error);
       setMessage({ text: FAILED });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwMessage(null);
+    if (next.length < 6) return setPwMessage({ text: 'Новый пароль — не короче 6 символов.' });
+    if (next !== repeat) return setPwMessage({ text: 'Новый пароль и повтор не совпадают.' });
+    setBusy(true);
+    try {
+      const newToken = await backend.adminSetPassword(next, current);
+      if (!newToken) {
+        setPwMessage({ text: 'Текущий пароль неверный (или слишком много попыток — подождите 15 минут).' });
+        return;
+      }
+      onNewSession(newToken);
+      setCurrent('');
+      setNext('');
+      setRepeat('');
+      setPwMessage({ text: 'Пароль изменён. Другие открытые сессии админ-панели завершены.', ok: true });
+    } catch (error) {
+      console.error(error);
+      setPwMessage({ text: FAILED });
     } finally {
       setBusy(false);
     }
@@ -491,7 +554,99 @@ const SettingsTab: React.FC = () => {
           </button>
         </div>
       ))}
+
+      <form onSubmit={e => void changePassword(e)} className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+        <div className="font-semibold text-slate-900 flex items-center gap-2">
+          <KeyRound className="w-4 h-4 text-slate-600" /> Пароль админ-панели
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <input type="password" autoComplete="current-password" aria-label="Текущий пароль" placeholder="Текущий пароль" value={current} onChange={e => setCurrent(e.target.value)} className="px-3 py-2 rounded-md border border-slate-300" />
+          <input type="password" autoComplete="new-password" aria-label="Новый пароль" placeholder="Новый пароль" value={next} onChange={e => setNext(e.target.value)} className="px-3 py-2 rounded-md border border-slate-300" />
+          <input type="password" autoComplete="new-password" aria-label="Повтор нового пароля" placeholder="Повтор нового пароля" value={repeat} onChange={e => setRepeat(e.target.value)} className="px-3 py-2 rounded-md border border-slate-300" />
+        </div>
+        <button type="submit" disabled={busy || !current || !next} className="px-4 py-2 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm cursor-pointer disabled:opacity-40">
+          Сменить пароль
+        </button>
+        <Notice text={pwMessage?.text ?? null} ok={pwMessage?.ok} />
+      </form>
     </div>
+  );
+};
+
+/** First visit: create the panel password. Later: enter it to get a session key. */
+const PasswordGate: React.FC<{ isSet: boolean; reason: string | null; onUnlocked: (token: string) => void }> = ({ isSet, reason, onUnlocked }) => {
+  const { backend } = useAccount();
+  const [password, setPassword] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!backend) return null;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!isSet) {
+      if (password.length < 6) return setError('Пароль — не короче 6 символов.');
+      if (password !== repeat) return setError('Пароль и повтор не совпадают.');
+    }
+    setBusy(true);
+    try {
+      if (isSet) {
+        const result = await backend.adminUnlock(password);
+        if (result.token) return onUnlocked(result.token);
+        setPassword('');
+        setError(result.locked ? 'Слишком много неверных попыток. Подождите 15 минут.' : 'Неверный пароль.');
+      } else {
+        const token = await backend.adminSetPassword(password, null);
+        if (token) onUnlocked(token);
+        else setError(FAILED);
+      }
+    } catch (err) {
+      console.error(err);
+      setError(FAILED);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={e => void submit(e)} className="max-w-sm mx-auto py-10 space-y-4">
+      <div className="text-center space-y-2">
+        <Lock className="w-10 h-10 mx-auto text-slate-400" />
+        <h1 className="text-xl font-bold text-slate-900">{isSet ? 'Пароль админ-панели' : 'Придумайте пароль админ-панели'}</h1>
+        <p className="text-sm text-slate-600">
+          {isSet
+            ? 'Введите пароль. Сессия действует 12 часов в этой вкладке.'
+            : 'Пароль будет запрашиваться при входе в админ-панель. Хранится только в зашифрованном виде.'}
+        </p>
+        {reason && <p className="text-sm text-amber-700">{reason}</p>}
+      </div>
+      <input
+        type="password"
+        autoFocus
+        autoComplete={isSet ? 'current-password' : 'new-password'}
+        aria-label="Пароль"
+        placeholder="Пароль"
+        value={password}
+        onChange={e => setPassword(e.target.value)}
+        className="w-full px-3 py-2.5 rounded-md border border-slate-300 bg-white focus:border-slate-800 focus:outline-none"
+      />
+      {!isSet && (
+        <input
+          type="password"
+          autoComplete="new-password"
+          aria-label="Повтор пароля"
+          placeholder="Повтор пароля"
+          value={repeat}
+          onChange={e => setRepeat(e.target.value)}
+          className="w-full px-3 py-2.5 rounded-md border border-slate-300 bg-white focus:border-slate-800 focus:outline-none"
+        />
+      )}
+      <button type="submit" disabled={busy || !password} className="w-full px-4 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer disabled:opacity-60">
+        {isSet ? 'Открыть панель' : 'Сохранить пароль'}
+      </button>
+      <Notice text={error} />
+    </form>
   );
 };
 
@@ -500,8 +655,26 @@ export const AdminPanel: React.FC = () => {
   const account = useAccount();
   const { backend, user, ready } = account;
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [passwordSet, setPasswordSet] = useState<boolean | null>(null);
+  const [token, setToken] = useState<string | null>(readSession);
+  const [lockReason, setLockReason] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('payments');
   const [openCount, setOpenCount] = useState(0);
+
+  const unlock = useCallback((newToken: string) => {
+    writeSession(newToken);
+    setToken(newToken);
+    setLockReason(null);
+    setPasswordSet(true);
+  }, []);
+
+  const lock = useCallback((reason: string | null = null) => {
+    writeSession(null);
+    setToken(null);
+    setLockReason(reason);
+  }, []);
+
+  const onExpired = useCallback(() => lock('Сессия истекла — введите пароль снова.'), [lock]);
 
   useEffect(() => {
     document.title = 'Админ-панель · Калькулятор тендеров';
@@ -515,20 +688,36 @@ export const AdminPanel: React.FC = () => {
     let active = true;
     backend
       .isAdmin()
-      .then(admin => active && setIsAdmin(admin))
+      .then(async admin => {
+        if (!active) return;
+        if (admin) {
+          const isSet = await backend.adminPasswordIsSet().catch(() => true);
+          if (!active) return;
+          setPasswordSet(isSet);
+          if (!isSet) lock();
+        }
+        setIsAdmin(admin);
+      })
       .catch(() => active && setIsAdmin(false));
     return () => {
       active = false;
     };
-  }, [backend, user]);
+  }, [backend, user, lock]);
+
+  // Signing out ends the panel session too
+  useEffect(() => {
+    if (ready && !user) lock();
+  }, [ready, user, lock]);
 
   const refreshCount = useCallback(() => {
-    if (!backend || !isAdmin) return;
+    if (!backend || !isAdmin || !token) return;
     backend
-      .listOpenPayments()
+      .listAdminPayments(token, true)
       .then(list => setOpenCount(list.length))
-      .catch(() => {});
-  }, [backend, isAdmin]);
+      .catch(error => {
+        if (isExpired(error)) onExpired();
+      });
+  }, [backend, isAdmin, token, onExpired]);
 
   useEffect(() => {
     refreshCount();
@@ -544,7 +733,7 @@ export const AdminPanel: React.FC = () => {
   let content: React.ReactNode;
   if (!account.configured) {
     content = <p className="text-slate-600">Аккаунты не подключены: на сайте не заданы ключи Supabase.</p>;
-  } else if (!ready || (user && isAdmin === null)) {
+  } else if (!ready || (user && (isAdmin === null || (isAdmin && passwordSet === null)))) {
     content = (
       <div className="flex justify-center py-16" role="status" aria-label="Загрузка">
         <div className="w-8 h-8 rounded-full border-2 border-slate-300 border-t-emerald-600 animate-spin" />
@@ -575,6 +764,8 @@ export const AdminPanel: React.FC = () => {
         </p>
       </div>
     );
+  } else if (!token) {
+    content = <PasswordGate isSet={passwordSet === true} reason={lockReason} onUnlocked={unlock} />;
   } else {
     content = (
       <div className="space-y-5">
@@ -597,10 +788,10 @@ export const AdminPanel: React.FC = () => {
             </button>
           ))}
         </nav>
-        {tab === 'payments' && <PaymentsTab onChanged={refreshCount} />}
-        {tab === 'users' && <UsersTab />}
-        {tab === 'plans' && <PlansTab />}
-        {tab === 'settings' && <SettingsTab />}
+        {tab === 'payments' && <PaymentsTab token={token} onExpired={onExpired} onChanged={refreshCount} />}
+        {tab === 'users' && <UsersTab token={token} onExpired={onExpired} />}
+        {tab === 'plans' && <PlansTab token={token} onExpired={onExpired} />}
+        {tab === 'settings' && <SettingsTab token={token} onExpired={onExpired} onNewSession={unlock} />}
       </div>
     );
   }
@@ -619,6 +810,17 @@ export const AdminPanel: React.FC = () => {
           {user && (
             <div className="flex items-center gap-3 min-w-0 text-sm">
               <span className="text-slate-300 truncate max-sm:hidden">{user.email}</span>
+              {token && (
+                <button
+                  type="button"
+                  onClick={() => lock()}
+                  title="Заблокировать панель: снова спросить пароль"
+                  aria-label="Заблокировать панель"
+                  className="p-1.5 rounded-md border border-slate-700 hover:bg-slate-800 cursor-pointer shrink-0"
+                >
+                  <Lock className="w-4 h-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void account.signOut()}
