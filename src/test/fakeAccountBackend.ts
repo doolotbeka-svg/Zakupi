@@ -1,5 +1,6 @@
 import { AccessInfo, OPEN_ACCESS } from '../account/access';
-import { AccountBackend, AccountError, AccountUser } from '../account/backend';
+import { AccountBackend, AccountError, AccountUser, PaymentRequest } from '../account/backend';
+import { PLANS, Plan } from '../config/plans';
 import { SavedTender } from '../types';
 
 export const VALID_CODE = '123456';
@@ -12,6 +13,10 @@ export class FakeAccountBackend implements AccountBackend {
   sentCodes: string[] = [];
   failSaves = false;
   failAccess = false;
+  plans: Plan[] = PLANS.map(p => ({ ...p }));
+  payments: (PaymentRequest & { userId: string })[] = [];
+  admins = new Set<string>();
+  private nextPayment = 1;
   private listeners = new Set<(user: AccountUser | null) => void>();
 
   async getUser() {
@@ -44,7 +49,9 @@ export class FakeAccountBackend implements AccountBackend {
 
   async getAccess(user: AccountUser | null): Promise<AccessInfo> {
     if (this.failAccess) throw new AccountError('network');
-    return user ? { ...this.access } : { ...this.access, paidUntil: null, plan: null };
+    if (!user) return { ...this.access, paidUntil: null, plan: null };
+    const granted = this.paidUntilByUser.get(user.id);
+    return granted ? { ...this.access, paidUntil: granted, plan: 'paid' } : { ...this.access };
   }
 
   private hasAccess() {
@@ -65,4 +72,91 @@ export class FakeAccountBackend implements AccountBackend {
   async deleteTender(user: AccountUser, id: string) {
     this.saved.set(user.id, (this.saved.get(user.id) ?? []).filter(t => t.id !== id));
   }
+
+  private strip({ userId: _userId, ...payment }: PaymentRequest & { userId: string }): PaymentRequest {
+    return { ...payment };
+  }
+
+  async listPlans() {
+    return this.plans.map(p => ({ ...p }));
+  }
+
+  async getOpenPayment(user: AccountUser) {
+    const open = this.payments.find(p => p.userId === user.id && p.status === 'pending');
+    return open ? this.strip(open) : null;
+  }
+
+  async requestPayment(planId: string) {
+    const user = this.user;
+    if (!user) throw new AccountError('forbidden');
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan || plan.priceKgs === null) throw new AccountError('unknown');
+    for (const p of this.payments) {
+      if (p.userId === user.id && p.status === 'pending' && !p.reportedAt) p.status = 'cancelled';
+    }
+    if (this.payments.some(p => p.userId === user.id && p.status === 'pending')) throw new AccountError('forbidden');
+    const payment = {
+      id: `pay-${this.nextPayment}`,
+      userId: user.id,
+      email: user.email,
+      plan: plan.id,
+      months: plan.months,
+      amountKgs: plan.priceKgs,
+      reference: `ZK-${String(10000 + this.nextPayment++)}`,
+      payerNote: null,
+      status: 'pending' as const,
+      reportedAt: null,
+      createdAt: new Date().toISOString()
+    };
+    this.payments.push(payment);
+    return this.strip(payment);
+  }
+
+  async reportPayment(id: string, note: string) {
+    const payment = this.payments.find(p => p.id === id && p.userId === this.user?.id && p.status === 'pending');
+    if (!payment) throw new AccountError('unknown');
+    payment.reportedAt = new Date().toISOString();
+    payment.payerNote = note.trim() || null;
+    return this.strip(payment);
+  }
+
+  async cancelPayment(id: string) {
+    const payment = this.payments.find(p => p.id === id && p.userId === this.user?.id && p.status === 'pending' && !p.reportedAt);
+    if (!payment) throw new AccountError('unknown');
+    payment.status = 'cancelled';
+  }
+
+  async isAdmin() {
+    return this.user !== null && this.admins.has(this.user.email.toLowerCase());
+  }
+
+  async listOpenPayments() {
+    if (!(await this.isAdmin())) return [];
+    return this.payments
+      .filter(p => p.status === 'pending')
+      .sort((a, b) => Number(b.reportedAt !== null) - Number(a.reportedAt !== null))
+      .map(p => this.strip(p));
+  }
+
+  async approvePayment(id: string) {
+    if (!(await this.isAdmin())) throw new AccountError('forbidden');
+    const payment = this.payments.find(p => p.id === id && p.status === 'pending');
+    if (!payment) throw new AccountError('unknown');
+    payment.status = 'approved';
+    // Single-user fake: the subscription belongs to whoever paid
+    const from = this.access.paidUntil && Date.parse(this.access.paidUntil) > Date.now() ? new Date(this.access.paidUntil) : new Date();
+    from.setMonth(from.getMonth() + payment.months);
+    this.paidUntilByUser.set(payment.userId, from.toISOString());
+    return from.toISOString();
+  }
+
+  async rejectPayment(id: string) {
+    if (!(await this.isAdmin())) throw new AccountError('forbidden');
+    const payment = this.payments.find(p => p.id === id && p.status === 'pending');
+    if (!payment) throw new AccountError('unknown');
+    payment.status = 'rejected';
+  }
+
+  /** Subscriptions granted by approvals, per user */
+  paidUntilByUser = new Map<string, string>();
 }

@@ -2,7 +2,8 @@ import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { SavedTender } from '../types';
 import { MAX_SAVED_TENDERS, sanitizeSavedTenders } from '../utils/storage';
 import { AccessInfo, normalizeCode } from './access';
-import { AccountBackend, AccountError, AccountUser } from './backend';
+import { AccountBackend, AccountError, AccountUser, PaymentRequest, PaymentStatus } from './backend';
+import { PLANS, Plan } from '../config/plans';
 
 interface ErrorLike {
   status?: number;
@@ -72,6 +73,38 @@ export function rowsToSavedTenders(rows: unknown): SavedTender[] {
       return { id: r.id, title: r.title, date: r.updated_at, params: data.params, items: data.items, discount: data.discount };
     })
   );
+}
+
+const PAYMENT_COLUMNS = 'id, email, plan, months, amount_kgs, reference, payer_note, status, reported_at, created_at';
+const PAYMENT_STATUSES: PaymentStatus[] = ['pending', 'approved', 'rejected', 'cancelled'];
+
+/** Database row → PaymentRequest; null for anything malformed. */
+export function rowToPayment(row: unknown): PaymentRequest | null {
+  if (typeof row !== 'object' || row === null) return null;
+  const r = row as Record<string, unknown>;
+  const status = PAYMENT_STATUSES.find(s => s === r.status);
+  if (typeof r.id !== 'string' || typeof r.reference !== 'string' || !status) return null;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0);
+  return {
+    id: r.id,
+    email: typeof r.email === 'string' ? r.email : '',
+    plan: typeof r.plan === 'string' ? r.plan : '',
+    months: num(r.months),
+    amountKgs: num(r.amount_kgs),
+    reference: r.reference,
+    payerNote: typeof r.payer_note === 'string' ? r.payer_note : null,
+    status,
+    reportedAt: typeof r.reported_at === 'string' ? r.reported_at : null,
+    createdAt: typeof r.created_at === 'string' ? r.created_at : ''
+  };
+}
+
+export function rowsToPlans(rows: unknown): Plan[] {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null)
+    .filter(r => typeof r.id === 'string' && Number(r.months) > 0 && Number(r.price_kgs) > 0)
+    .map(r => ({ id: r.id as string, months: Number(r.months), priceKgs: Number(r.price_kgs) }));
 }
 
 export function createSupabaseBackend(url: string, key: string, client?: SupabaseClient): AccountBackend {
@@ -161,6 +194,77 @@ export function createSupabaseBackend(url: string, key: string, client?: Supabas
 
     async deleteTender(user, id) {
       const { error } = await supabase.from('saved_tenders').delete().eq('user_id', user.id).eq('id', id);
+      if (error) throw describeDbError(error);
+    },
+
+    async listPlans() {
+      const { data, error } = await supabase
+        .from('subscription_plans')
+        .select('id, months, price_kgs')
+        .order('sort', { ascending: true });
+      if (error) throw describeDbError(error);
+      const plans = rowsToPlans(data);
+      return plans.length > 0 ? plans : [...PLANS];
+    },
+
+    async getOpenPayment(user) {
+      const { data, error } = await supabase
+        .from('payment_requests')
+        .select(PAYMENT_COLUMNS)
+        .eq('user_id', user.id)
+        .eq('status', 'pending')
+        .maybeSingle();
+      if (error) throw describeDbError(error);
+      return rowToPayment(data);
+    },
+
+    async requestPayment(planId) {
+      const { data, error } = await supabase.rpc('request_payment', { p_plan: planId });
+      if (error) throw describeDbError(error);
+      const payment = rowToPayment(data);
+      if (!payment) throw new AccountError('unknown');
+      return payment;
+    },
+
+    async reportPayment(id, note) {
+      const { data, error } = await supabase.rpc('report_payment_sent', { p_id: id, p_note: note });
+      if (error) throw describeDbError(error);
+      const payment = rowToPayment(data);
+      if (!payment) throw new AccountError('unknown');
+      return payment;
+    },
+
+    async cancelPayment(id) {
+      const { error } = await supabase.rpc('cancel_payment_request', { p_id: id });
+      if (error) throw describeDbError(error);
+    },
+
+    async isAdmin() {
+      const { data, error } = await supabase.rpc('is_admin');
+      if (error) return false;
+      return data === true;
+    },
+
+    async listOpenPayments() {
+      const { data, error } = await supabase
+        .from('payment_requests')
+        .select(PAYMENT_COLUMNS)
+        .eq('status', 'pending')
+        .order('reported_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw describeDbError(error);
+      return (Array.isArray(data) ? data : []).map(rowToPayment).filter((p): p is PaymentRequest => p !== null);
+    },
+
+    async approvePayment(id) {
+      const { data, error } = await supabase.rpc('approve_payment_request', { p_id: id });
+      if (error) throw describeDbError(error);
+      return typeof data === 'string' ? data : '';
+    },
+
+    async rejectPayment(id) {
+      const { error } = await supabase.rpc('reject_payment_request', { p_id: id });
       if (error) throw describeDbError(error);
     }
   };

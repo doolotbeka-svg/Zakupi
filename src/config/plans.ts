@@ -17,13 +17,13 @@ export const FEATURE_NAMES: Record<Feature, { ky: string; ru: string }> = {
 export interface Plan {
   id: string;
   months: number;
-  /** Price in soms. null until the price is decided — shown as "price to be announced". */
+  /** Price in soms. The database (subscription_plans) is the source of truth; these are the fallback. */
   priceKgs: number | null;
 }
 
 export const PLANS: readonly Plan[] = [
-  { id: '1m', months: 1, priceKgs: null },
-  { id: '3m', months: 3, priceKgs: null },
-  { id: '6m', months: 6, priceKgs: null },
-  { id: '12m', months: 12, priceKgs: null }
+  { id: '1m', months: 1, priceKgs: 400 },
+  { id: '3m', months: 3, priceKgs: 1000 },
+  { id: '6m', months: 6, priceKgs: 2100 },
+  { id: '12m', months: 12, priceKgs: 3700 }
 ];

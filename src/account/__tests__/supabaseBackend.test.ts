@@ -6,6 +6,8 @@ import {
   createSupabaseBackend,
   describeAuthError,
   describeDbError,
+  rowToPayment,
+  rowsToPlans,
   rowsToSavedTenders,
   savedTenderToRow
 } from '../supabaseBackend';
@@ -167,5 +169,74 @@ describe('createSupabaseBackend', () => {
   it('отказ базы при сохранении — ошибка forbidden', async () => {
     const { client } = fakeClient({ saved_tenders: { data: null, error: { code: '42501', message: 'rls' } } });
     await expect(createSupabaseBackend('u', 'k', client).saveTender({ id: 'u1', email: 'a@b.kg' }, tender)).rejects.toBeInstanceOf(AccountError);
+  });
+});
+
+describe('оплата по QR: преобразование и вызовы', () => {
+  const row = {
+    id: 'p1',
+    email: 'a@b.kg',
+    plan: '3m',
+    months: 3,
+    amount_kgs: 1000,
+    reference: 'ZK-04821',
+    payer_note: null,
+    status: 'pending',
+    reported_at: null,
+    created_at: '2026-11-11T10:00:00Z'
+  };
+
+  it('rowToPayment', () => {
+    expect(rowToPayment(row)).toEqual({
+      id: 'p1',
+      email: 'a@b.kg',
+      plan: '3m',
+      months: 3,
+      amountKgs: 1000,
+      reference: 'ZK-04821',
+      payerNote: null,
+      status: 'pending',
+      reportedAt: null,
+      createdAt: '2026-11-11T10:00:00Z'
+    });
+    expect(rowToPayment(null)).toBeNull();
+    expect(rowToPayment({ ...row, status: 'weird' })).toBeNull();
+  });
+
+  it('rowsToPlans отбрасывает некорректные тарифы', () => {
+    expect(
+      rowsToPlans([
+        { id: '1m', months: 1, price_kgs: 400 },
+        { id: 'bad', months: 0, price_kgs: 10 },
+        { id: 'free', months: 1, price_kgs: 0 }
+      ])
+    ).toEqual([{ id: '1m', months: 1, priceKgs: 400 }]);
+  });
+
+  it('вызывает функции базы с правильными параметрами', async () => {
+    const rpc = vi.fn(async (name: string) => ({ data: name === 'is_admin' ? true : name === 'approve_payment_request' ? '2027-02-11T00:00:00Z' : row, error: null }));
+    const client = { auth: {}, from: () => fakeQuery({ data: [], error: null }, []), rpc } as unknown as SupabaseClient;
+    const backend = createSupabaseBackend('u', 'k', client);
+
+    await backend.requestPayment('3m');
+    await backend.reportPayment('p1', 'Азамат');
+    await backend.cancelPayment('p1');
+    expect(await backend.isAdmin()).toBe(true);
+    expect(await backend.approvePayment('p1')).toBe('2027-02-11T00:00:00Z');
+    await backend.rejectPayment('p1');
+
+    expect(rpc.mock.calls).toEqual([
+      ['request_payment', { p_plan: '3m' }],
+      ['report_payment_sent', { p_id: 'p1', p_note: 'Азамат' }],
+      ['cancel_payment_request', { p_id: 'p1' }],
+      ['is_admin'],
+      ['approve_payment_request', { p_id: 'p1' }],
+      ['reject_payment_request', { p_id: 'p1' }]
+    ]);
+  });
+
+  it('если таблица тарифов пуста, использует цены из кода', async () => {
+    const client = { auth: {}, from: () => fakeQuery({ data: [], error: null }, []) } as unknown as SupabaseClient;
+    expect((await createSupabaseBackend('u', 'k', client).listPlans()).map(p => p.priceKgs)).toEqual([400, 1000, 2100, 3700]);
   });
 });

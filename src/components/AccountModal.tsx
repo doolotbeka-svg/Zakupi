@@ -4,7 +4,8 @@ import { translations } from '../i18n/translations';
 import { useAccount } from '../account/AccountContext';
 import { daysLeft, isValidCode, isValidEmail, normalizeCode, subscriptionStatus } from '../account/access';
 import { AccountError } from '../account/backend';
-import { FEATURE_NAMES, PLANS } from '../config/plans';
+import { FEATURE_NAMES } from '../config/plans';
+import { AdminPayments, PaymentSection } from './PaymentSection';
 import { AlertCircle, CheckCircle2, Cloud, Lock, LogOut, Mail, X } from 'lucide-react';
 
 const RESEND_SECONDS = 60;
@@ -15,15 +16,6 @@ interface AccountModalProps {
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-const monthsLabel = (months: number, lang: Language) => {
-  if (lang === 'ky') return `${months} ай`;
-  const mod10 = months % 10;
-  const mod100 = months % 100;
-  const word =
-    mod10 === 1 && mod100 !== 11 ? 'месяц' : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'месяца' : 'месяцев';
-  return `${months} ${word}`;
-};
 
 export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
   const account = useAccount();
@@ -51,7 +43,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
     }
   }, [account.isAccountOpen, account.user]);
 
-  const { isAccountOpen, closeAccount } = account;
+  const { isAccountOpen, closeAccount, refreshAccess } = account;
+  const signedIn = account.user !== null;
+  useEffect(() => {
+    if (isAccountOpen && signedIn) void refreshAccess();
+    // Only when the window opens or the user signs in
+  }, [isAccountOpen, signedIn]);
   useEffect(() => {
     if (!isAccountOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -290,34 +287,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
                 )}
               </div>
 
-              {/* Plans: shown once the paywall is on or the user has had a subscription */}
-              {(access.paywallEnabled || status !== 'none') && (
-                <div className="space-y-2">
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-800">{L('Тарифтер', 'Тарифы')}</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {PLANS.map(plan => (
-                      <div key={plan.id} className="p-3 rounded-md border border-slate-200 text-xs">
-                        <div className="font-bold text-slate-900 text-sm">{monthsLabel(plan.months, lang)}</div>
-                        <div className="text-slate-600 mt-0.5 font-mono">
-                          {plan.priceKgs !== null
-                            ? `${plan.priceKgs.toLocaleString('ru-RU')} KGS`
-                            : L('баасы такталат', 'цена уточняется')}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    disabled
-                    className="w-full px-4 py-2.5 rounded-md bg-slate-300 text-white font-semibold text-sm cursor-not-allowed"
-                  >
-                    {L('Төлөө', 'Оплатить')}
-                  </button>
-                  <p className="text-[11px] text-slate-500">
-                    {L('Онлайн төлөм жакында иштей баштайт.', 'Онлайн-оплата появится в ближайшее время.')}
-                  </p>
-                </div>
-              )}
+              {/* Plans and payment: once the paywall is on or the user has had a subscription */}
+              {(access.paywallEnabled || status !== 'none') && <PaymentSection lang={lang} />}
 
               {account.canUse('savedTenders') && (
                 <p className="flex gap-2 text-xs text-slate-600">
@@ -328,6 +299,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
                   )}
                 </p>
               )}
+
+              <AdminPayments lang={lang} />
 
               <button
                 type="button"
