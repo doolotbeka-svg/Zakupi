@@ -38,10 +38,13 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="w-9 h-9 shrink-0 rounded-md bg-emerald-600 flex items-center justify-center font-bold text-white shadow-sm ring-1 ring-emerald-400/30">
             <span className="text-sm font-mono tracking-tighter">KG</span>
           </div>
-          <div className="hidden sm:flex flex-col min-w-0">
+          <div className="hidden md:flex flex-col min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-base xl:text-lg font-bold tracking-tight text-white truncate">
-                {t.appTitle}
+              <span
+                className="text-sm md:text-base xl:text-lg font-bold tracking-tight text-white truncate"
+                title={t.appTitle}
+              >
+                {lang === 'ky' ? 'Тендер калькулятору' : 'Калькулятор тендеров'}
               </span>
               <span className="hidden lg:inline text-xs font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-700/50 px-2 py-0.5 rounded">
                 zakupki.okmot.kg
@@ -74,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label={t.savedScenariosTitle}
           >
             <Save className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden xl:inline">{t.savedScenariosTitle}</span>
+            <span className="hidden xl:inline">{lang === 'ky' ? 'Сакталгандар' : 'Сохранённые'}</span>
             {savedCount > 0 && (
               <span className="max-[419px]:hidden font-mono text-[10px] leading-none px-1.5 py-0.5 rounded bg-emerald-600 text-white">
                 {savedCount}
@@ -90,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label={t.printReport}
           >
             <Printer className="w-3.5 h-3.5 text-slate-400" />
-            <span className="hidden xl:inline">{t.printReport}</span>
+            <span className="hidden xl:inline">{lang === 'ky' ? 'Басып чыгаруу' : 'Печать'}</span>
           </button>
 
           <button
@@ -111,7 +114,6 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label={t.resetData}
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden xl:inline">{t.resetData}</span>
           </button>
         </div>
 

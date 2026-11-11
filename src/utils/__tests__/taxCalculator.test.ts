@@ -289,20 +289,23 @@ describe('generateSensitivityMatrix', () => {
   });
 });
 
+/** formatCurrency with non-breaking spaces turned into ordinary ones, for readable expectations. */
+const fc = (...args: Parameters<typeof formatCurrency>) => formatCurrency(...args).replace(/\u00a0/g, ' ');
+
 describe('пересчёт валюты при отображении', () => {
   afterEach(() => setKgsPerRub(DEFAULT_KGS_PER_RUB));
 
   it('суммы в сомах не зависят от курса', () => {
     setKgsPerRub(1.25);
-    expect(formatCurrency(1_000_000, 'KGS')).toBe('1 000 000 KGS');
+    expect(fc(1_000_000, 'KGS')).toBe('1 000 000 KGS');
     expect(convertFromKgs(500, 'KGS')).toBe(500);
   });
 
   it('суммы в рублях делятся на курс', () => {
     setKgsPerRub(1.25);
     expect(convertFromKgs(1_000_000, 'RUB')).toBe(800_000);
-    expect(formatCurrency(1_000_000, 'RUB')).toBe('800 000 RUB');
-    expect(formatCurrency(-125, 'RUB', 2)).toBe('−100.00 RUB');
+    expect(fc(1_000_000, 'RUB')).toBe('800 000 RUB');
+    expect(fc(-125, 'RUB', 2)).toBe('−100.00 RUB');
   });
 
   it('некорректный курс заменяется на 1', () => {
@@ -316,14 +319,18 @@ describe('пересчёт валюты при отображении', () => {
 });
 
 describe('форматирование', () => {
+  it('formatCurrency не даёт сумме переноситься', () => {
+    expect(formatCurrency(1_234_567)).toBe('1\u00a0234\u00a0567\u00a0KGS');
+  });
+
   it('formatCurrency', () => {
-    expect(formatCurrency(1_234_567)).toBe('1 234 567 KGS');
-    expect(formatCurrency(999)).toBe('999 KGS');
-    expect(formatCurrency(-1_234_567.5)).toBe('−1 234 568 KGS');
-    expect(formatCurrency(1234.5, 'RUB', 2)).toBe('1 234.50 RUB');
-    expect(formatCurrency(-0.3)).toBe('0 KGS'); // без «минус ноль»
-    expect(formatCurrency(NaN)).toBe('0 KGS');
-    expect(formatCurrency(Infinity)).toBe('0 KGS');
+    expect(fc(1_234_567)).toBe('1 234 567 KGS');
+    expect(fc(999)).toBe('999 KGS');
+    expect(fc(-1_234_567.5)).toBe('−1 234 568 KGS');
+    expect(fc(1234.5, 'RUB', 2)).toBe('1 234.50 RUB');
+    expect(fc(-0.3)).toBe('0 KGS'); // без «минус ноль»
+    expect(fc(NaN)).toBe('0 KGS');
+    expect(fc(Infinity)).toBe('0 KGS');
   });
 
   it('formatPercent', () => {

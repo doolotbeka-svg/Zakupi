@@ -45,7 +45,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-lg border border-slate-300 shadow-xl max-w-2xl w-full overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-300 shadow-xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
         <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-slate-900 text-base">
@@ -66,7 +66,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 space-y-3.5 max-h-[75vh] overflow-y-auto">
+        <div className="p-4 sm:p-5 space-y-3.5 flex-1 min-h-0 overflow-y-auto">
           {TENDER_TEMPLATES.map((tmpl) => (
             <div
               key={tmpl.id}
@@ -85,9 +85,9 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
                   </h4>
                   <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 mt-2 font-mono">
                     <span>План: <strong>{formatCurrency(tmpl.params.plannedPrice, currency)}</strong></span>
-                    <span aria-hidden="true">·</span>
+                    <span aria-hidden="true" className="hidden sm:inline">·</span>
                     <span>{L('Товар', 'Товары')}: <strong>{tmpl.items.length} {L('поз.', 'поз.')}</strong></span>
-                    <span aria-hidden="true">·</span>
+                    <span aria-hidden="true" className="hidden sm:inline">·</span>
                     <span>Аукцион: <strong>{tmpl.defaultDiscount}%</strong></span>
                   </div>
                 </div>

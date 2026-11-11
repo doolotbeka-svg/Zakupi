@@ -111,7 +111,7 @@ export const SavedTendersModal: React.FC<SavedTendersModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-lg border border-slate-300 shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-300 shadow-xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
         <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-slate-900 text-base">{t.savedScenariosTitle}</h3>
@@ -188,7 +188,7 @@ export const SavedTendersModal: React.FC<SavedTendersModalProps> = ({
         </form>
 
         {/* Saved list */}
-        <div className="p-5 space-y-2.5 overflow-y-auto">
+        <div className="p-4 sm:p-5 space-y-2.5 flex-1 min-h-0 overflow-y-auto">
           {savedTenders.length === 0 ? (
             <div className="py-8 text-center text-slate-500">
               <FolderOpen className="w-9 h-9 mx-auto text-slate-300 mb-2" />

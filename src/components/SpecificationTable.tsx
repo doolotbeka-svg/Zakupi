@@ -414,11 +414,11 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
 
       {/* Bottom Action Strip: Apply to calculation */}
       <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2 text-slate-600">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-600">
           <span className="font-medium">{t.itemsTotalCount}: <strong className="text-slate-900">{items.length}</strong></span>
-          <span aria-hidden="true">·</span>
+          <span aria-hidden="true" className="hidden sm:inline">·</span>
           <span>{t.itemsTotalUnits}: <strong className="text-slate-900 font-mono">{totalQuantity.toLocaleString('ru-RU')}</strong></span>
-          <span aria-hidden="true">·</span>
+          <span aria-hidden="true" className="hidden sm:inline">·</span>
           <span>{L('Жалпы сатып алуу', 'Итого закуп')}: <strong className="text-slate-900 font-mono">{formatCurrency(totalCost, currency)}</strong></span>
         </div>
 

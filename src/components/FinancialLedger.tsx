@@ -24,7 +24,7 @@ export const FinancialLedger: React.FC<FinancialLedgerProps> = ({
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-      <div className="bg-slate-50/80 px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+      <div className="bg-slate-50/80 px-4 sm:px-5 py-3 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
         <h3 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">
           {t.ledgerTitle}
         </h3>

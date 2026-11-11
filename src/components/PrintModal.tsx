@@ -45,7 +45,7 @@ export const PrintModal: React.FC<PrintModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-lg border border-slate-300 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden print-sheet">
+      <div className="bg-white rounded-lg border border-slate-300 shadow-2xl max-w-4xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden print-sheet">
         {/* Top Modal Controls */}
         <div className="bg-slate-900 text-white px-5 py-3 flex items-center justify-between no-print">
           <div className="flex items-center gap-2">
@@ -73,7 +73,7 @@ export const PrintModal: React.FC<PrintModalProps> = ({
         </div>
 
         {/* Printable Document Body */}
-        <div className="p-8 overflow-y-auto space-y-6 text-slate-900 font-sans print:p-0 print:space-y-4 print-sheet-body">
+        <div className="p-4 sm:p-8 flex-1 min-h-0 overflow-y-auto space-y-6 text-slate-900 font-sans print:p-0 print:space-y-4 print-sheet-body">
           {/* Document Header */}
           <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-start">
             <div>

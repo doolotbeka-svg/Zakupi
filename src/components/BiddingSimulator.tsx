@@ -118,9 +118,9 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
         </button>
       </div>
 
-      <div className="p-5 space-y-6">
+      <div className="p-3 sm:p-5 space-y-5 sm:space-y-6">
         {/* Slider & Controls Area */}
-        <div className="bg-slate-50 rounded-lg p-5 border border-slate-200/80">
+        <div className="bg-slate-50 rounded-lg p-3 sm:p-5 border border-slate-200/80">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
@@ -133,11 +133,11 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
             </div>
 
             {/* Current percentage badge & steppers */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1 sm:gap-2">
               <button
                 type="button"
                 onClick={() => handleStep(-1)}
-                className="w-8 h-8 rounded bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer flex items-center justify-center text-sm shadow-2xs"
+                className="h-8 min-w-8 px-1.5 rounded bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer flex items-center justify-center text-xs sm:text-sm shadow-2xs"
                 title="-1%"
               >
                 -1%
@@ -145,7 +145,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
               <button
                 type="button"
                 onClick={() => handleStep(-0.5)}
-                className="w-8 h-8 rounded bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer flex items-center justify-center text-xs shadow-2xs"
+                className="h-8 min-w-8 px-1.5 rounded bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer flex items-center justify-center text-xs shadow-2xs"
                 title="-0.5%"
               >
                 -0.5
@@ -167,15 +167,15 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                   }}
                   aria-label={L('Төмөндөтүүнүн так пайызы', 'Точный процент снижения')}
                   title={L('Так пайызды киргизиңиз (0–99.99)', 'Введите точный процент (0–99.99)')}
-                  className="w-[4.5rem] bg-transparent text-right tabular-nums py-1.5 pl-2 focus:outline-none"
+                  className="w-14 sm:w-[4.5rem] bg-transparent text-right tabular-nums py-1.5 pl-2 focus:outline-none"
                 />
-                <span className="pr-3 pl-0.5" aria-hidden="true">%</span>
+                <span className="pr-2 sm:pr-3 pl-0.5" aria-hidden="true">%</span>
               </div>
 
               <button
                 type="button"
                 onClick={() => handleStep(0.5)}
-                className="w-8 h-8 rounded bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer flex items-center justify-center text-xs shadow-2xs"
+                className="h-8 min-w-8 px-1.5 rounded bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer flex items-center justify-center text-xs shadow-2xs"
                 title="+0.5%"
               >
                 +0.5
@@ -183,7 +183,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
               <button
                 type="button"
                 onClick={() => handleStep(1)}
-                className="w-8 h-8 rounded bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer flex items-center justify-center text-sm shadow-2xs"
+                className="h-8 min-w-8 px-1.5 rounded bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer flex items-center justify-center text-xs sm:text-sm shadow-2xs"
                 title="+1%"
               >
                 +1%
@@ -373,7 +373,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowTaxBreakdown(!showTaxBreakdown)}
-                  className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                  className="p-1.5 -m-1.5 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
                   title={L('Салык чечмелениши', 'Расшифровка налогов')}
                   aria-label={L('Салык чечмелениши', 'Расшифровка налогов')}
                 >

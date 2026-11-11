@@ -246,7 +246,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
               <button
                 type="button"
                 onClick={() => onChange({ guaranteeType: 'percent' })}
-                className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
                   params.guaranteeType === 'percent'
                     ? 'bg-white text-slate-900 font-bold shadow-xs'
                     : 'text-slate-500 hover:text-slate-900'
@@ -260,7 +260,7 @@ export const TenderParamsBlock: React.FC<TenderParamsBlockProps> = ({
               <button
                 type="button"
                 onClick={() => onChange({ guaranteeType: 'fixed' })}
-                className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
                   params.guaranteeType === 'fixed'
                     ? 'bg-white text-slate-900 font-bold shadow-xs'
                     : 'text-slate-500 hover:text-slate-900'
