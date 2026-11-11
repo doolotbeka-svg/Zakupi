@@ -9,7 +9,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
-import { DueSubscription, sendSubscriptionReminders } from '../../src/server/reminders';
+import { sendSubscriptionReminders, type DueSubscription } from '../../src/server/reminders.js';
 
 const REQUIRED = ['VITE_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'GMAIL_USER', 'GMAIL_APP_PASSWORD'] as const;
 
