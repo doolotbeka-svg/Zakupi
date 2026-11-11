@@ -45,10 +45,11 @@ npm run dev
 | `npm run build` | Собирает production-версию в папку `dist` |
 | `npm run preview` | Запускает собранную версию локально |
 | `npm run lint` | Проверяет типы TypeScript |
+| `npm test` | Запускает автотесты (Vitest) |
 
 ## Технологии
 
-React 19, TypeScript, Vite, Tailwind CSS 4, SheetJS (`xlsx`) для работы с Excel, иконки `lucide-react`.
+React 19, TypeScript, Vite, Tailwind CSS 4, SheetJS (`xlsx`) для работы с Excel, иконки `lucide-react`, тесты на Vitest.
 
 ## Структура проекта
 
@@ -58,6 +59,7 @@ src/
   components/             блоки интерфейса (параметры, симулятор, таблица, отчёт)
   utils/taxCalculator.ts  расчёт налогов, прибыли и точки безубыточности
   utils/excel.ts          импорт и экспорт Excel / CSV
+  utils/__tests__/        автотесты расчётов и импорта
   data/defaultTemplates.ts  готовые шаблоны тендеров
   i18n/translations.ts    тексты на кыргызском и русском
 ```
