@@ -1,7 +1,7 @@
 import React from 'react';
 import { CurrencySymbol, Language } from '../types';
 import { translations } from '../i18n/translations';
-import { RotateCcw, Printer, BookmarkCheck, Save, Share2 } from 'lucide-react';
+import { RotateCcw, Printer, BookmarkCheck, Save, Share2, LogIn, UserRound } from 'lucide-react';
 
 interface HeaderProps {
   lang: Language;
@@ -14,6 +14,8 @@ interface HeaderProps {
   savedCount: number;
   onPrint: () => void;
   onShare: () => void;
+  /** Present when accounts are set up */
+  account?: { signedIn: boolean; onOpen: () => void };
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -26,7 +28,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSaved,
   savedCount,
   onPrint,
-  onShare
+  onShare,
+  account
 }) => {
   const t = translations[lang];
 
@@ -35,7 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-3 max-[359px]:px-2 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-1.5 max-[359px]:gap-1 sm:gap-4">
         {/* Zone 1: Brand & Wordmark */}
         <div className="flex items-center gap-3 min-w-0 max-[359px]:hidden">
-          <div className="w-9 h-9 shrink-0 rounded-md bg-emerald-600 flex items-center justify-center font-bold text-white shadow-sm ring-1 ring-emerald-400/30">
+          <div className={`w-9 h-9 shrink-0 rounded-md ${account ? 'max-[399px]:hidden ' : ''}bg-emerald-600 flex items-center justify-center font-bold text-white shadow-sm ring-1 ring-emerald-400/30`}>
             <span className="text-sm font-mono tracking-tighter">KG</span>
           </div>
           <div className="hidden md:flex flex-col min-w-0">
@@ -103,6 +106,21 @@ export const Header: React.FC<HeaderProps> = ({
             <Share2 className="w-3.5 h-3.5 text-slate-400" />
           </button>
 
+          {account && (
+            <button
+              type="button"
+              onClick={account.onOpen}
+              className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-sm:px-1.5 max-[359px]:px-1 ${
+                account.signedIn ? 'text-emerald-300' : ''
+              }`}
+              title={account.signedIn ? (lang === 'ky' ? 'Аккаунт' : 'Аккаунт') : lang === 'ky' ? 'Кирүү' : 'Войти'}
+              aria-label={account.signedIn ? (lang === 'ky' ? 'Аккаунт' : 'Аккаунт') : lang === 'ky' ? 'Кирүү' : 'Войти'}
+            >
+              {account.signedIn ? <UserRound className="w-3.5 h-3.5" /> : <LogIn className="w-3.5 h-3.5 text-slate-400" />}
+              {!account.signedIn && <span className="hidden xl:inline">{lang === 'ky' ? 'Кирүү' : 'Войти'}</span>}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onReset}
@@ -149,7 +167,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => onLanguageChange('ky')}
               className={`px-2.5 max-sm:px-2 max-[359px]:px-1.5 py-1 rounded transition-all cursor-pointer ${
                 lang === 'ky'
-                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs'
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs max-[400px]:hidden'
                   : 'text-emerald-300 hover:text-white'
               }`}
               aria-label="Кыргызча"
@@ -161,7 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => onLanguageChange('ru')}
               className={`px-2.5 max-sm:px-2 max-[359px]:px-1.5 py-1 rounded transition-all cursor-pointer ${
                 lang === 'ru'
-                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs'
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs max-[400px]:hidden'
                   : 'text-emerald-300 hover:text-white'
               }`}
               aria-label="Русский"
