@@ -157,7 +157,7 @@ begin
   insert into public.admin_secrets (id, password_hash, updated_at)
   values (true, extensions.crypt(p_new, extensions.gen_salt('bf', 10)), now())
   on conflict (id) do update set password_hash = excluded.password_hash, updated_at = now();
-  delete from public.admin_sessions;
+  delete from public.admin_sessions where true;  -- Supabase rejects DELETE without WHERE (safeupdate)
   delete from public.admin_password_failures where email = v_email;
   return public.admin_new_session(v_email);
 end;
