@@ -276,45 +276,13 @@ describe('оплата по QR', () => {
     expect(backend.payments[0].status).toBe('cancelled');
   });
 
-  it('администратор подтверждает оплату, и подписка покупателя включается', async () => {
-    backend.access = { ...PAYWALL };
-    backend.admins.add('admin@example.com');
-    const user = await renderApp();
-
-    // Покупатель платит
-    let dialog = await signIn(user, 'buyer@example.com');
-    expect(within(dialog).queryByText(/Заявки на оплату/)).toBeNull();
-    await startPayment(user, dialog);
-    await user.click(within(dialog).getByRole('button', { name: 'Я оплатил' }));
-    await within(dialog).findByText('Оплата проверяется');
-    await user.click(within(dialog).getByRole('button', { name: 'Выйти' }));
-    await user.keyboard('{Escape}');
-
-    // Администратор подтверждает
-    dialog = await signIn(user, 'admin@example.com');
-    expect(await within(dialog).findByText('Заявки на оплату (1)')).toBeTruthy();
-    expect(dialog.textContent).toContain('buyer@example.com');
-    expect(dialog.textContent).toContain('Сообщил об оплате');
-    await user.click(within(dialog).getByRole('button', { name: 'Подтвердить' }));
-    expect(await within(dialog).findByText('Заявки на оплату (0)')).toBeTruthy();
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/Подтвердить оплату 1000 сом от buyer@example.com\? Подписка продлится на 3 месяца/));
-    await user.click(within(dialog).getByRole('button', { name: 'Выйти' }));
-    await user.keyboard('{Escape}');
-
-    // Покупатель видит активную подписку и пользуется платной функцией
-    dialog = await signIn(user, 'buyer@example.com');
-    expect(await within(dialog).findByText(/Активна до/)).toBeTruthy();
-    await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: 'Печать отчета / PDF' }));
-    expect(screen.getByRole('dialog').textContent).toContain('КАРТА РЕНТАБЕЛЬНОСТИ ТЕНДЕРА');
-  });
-
-  it('отклонённая заявка возвращает покупателя к выбору тарифа', async () => {
+  it('администратор видит в окне аккаунта ссылку на админ-панель с числом новых заявок', async () => {
     backend.access = { ...PAYWALL };
     backend.admins.add('admin@example.com');
     const user = await renderApp();
 
     let dialog = await signIn(user, 'buyer@example.com');
+    expect(within(dialog).queryByRole('link', { name: /Админ-панель/ })).toBeNull();
     await startPayment(user, dialog);
     await user.click(within(dialog).getByRole('button', { name: 'Я оплатил' }));
     await within(dialog).findByText('Оплата проверяется');
@@ -322,14 +290,8 @@ describe('оплата по QR', () => {
     await user.keyboard('{Escape}');
 
     dialog = await signIn(user, 'admin@example.com');
-    await within(dialog).findByText('Заявки на оплату (1)');
-    await user.click(within(dialog).getByRole('button', { name: 'Отклонить' }));
-    expect(await within(dialog).findByText('Заявки на оплату (0)')).toBeTruthy();
-    await user.click(within(dialog).getByRole('button', { name: 'Выйти' }));
-    await user.keyboard('{Escape}');
-
-    dialog = await signIn(user, 'buyer@example.com');
-    expect(await within(dialog).findByRole('button', { name: 'Перейти к оплате по QR' })).toBeTruthy();
-    expect(within(dialog).getByText('Подписки нет.')).toBeTruthy();
+    const link = await within(dialog).findByRole('link', { name: /Админ-панель/ });
+    expect(link.getAttribute('href')).toBe('/#admin');
+    expect(await within(link).findByText('1 новых заявок')).toBeTruthy();
   });
 });

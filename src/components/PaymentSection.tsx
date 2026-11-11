@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Language } from '../types';
 import { useAccount } from '../account/AccountContext';
 import { PaymentRequest } from '../account/backend';
 import { PLANS, Plan } from '../config/plans';
 import { QR_PAYMENT } from '../config/payment';
-import { AlertCircle, Check, Copy, Download, ExternalLink, QrCode, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, Check, Copy, Download, ExternalLink, QrCode, ShieldCheck } from 'lucide-react';
 
 const formatSom = (amount: number) => `${amount.toLocaleString('ru-RU').replace(/ /g, ' ')} сом`;
 
@@ -262,125 +262,48 @@ export const PaymentSection: React.FC<{ lang: Language }> = ({ lang }) => {
   );
 };
 
-/** Administrator: open payment requests with approve / reject. Shown only to administrators. */
-export const AdminPayments: React.FC<{ lang: Language }> = ({ lang }) => {
-  const account = useAccount();
+/** Administrator: link to the admin panel with the number of new payment requests. */
+export const AdminLink: React.FC<{ lang: Language }> = ({ lang }) => {
+  const { backend, user } = useAccount();
   const L = useL(lang);
-  const { backend, user, refreshAccess } = account;
   const [isAdmin, setIsAdmin] = useState(false);
-  const [requests, setRequests] = useState<PaymentRequest[]>([]);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    if (!backend) return;
-    setRequests(await backend.listOpenPayments());
-  }, [backend]);
+  const [openCount, setOpenCount] = useState(0);
 
   useEffect(() => {
     if (!backend || !user) return;
     let active = true;
     backend
       .isAdmin()
-      .then(admin => {
+      .then(async admin => {
         if (!active) return;
         setIsAdmin(admin);
-        if (admin) void reload().catch(() => {});
+        if (admin) {
+          const open = await backend.listOpenPayments();
+          if (active) setOpenCount(open.length);
+        }
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, [backend, user, reload]);
+  }, [backend, user]);
 
-  if (!backend || !user || !isAdmin) return null;
-
-  const decide = async (request: PaymentRequest, approve: boolean) => {
-    const question = approve
-      ? L(
-          `${request.email} үчүн ${request.amountKgs} сом төлөмүн ырастайсызбы? Жазылуу ${request.months} айга узартылат.`,
-          `Подтвердить оплату ${request.amountKgs} сом от ${request.email}? Подписка продлится на ${monthsLabel(request.months, 'ru')}.`
-        )
-      : L(`${request.email} өтүнмөсүн четке кагасызбы?`, `Отклонить заявку ${request.email}?`);
-    if (!window.confirm(question)) return;
-    setBusyId(request.id);
-    setError(null);
-    try {
-      if (approve) await backend.approvePayment(request.id);
-      else await backend.rejectPayment(request.id);
-      await reload();
-      await refreshAccess();
-    } catch (err) {
-      console.error(err);
-      setError(L('Аракет аткарылган жок. Кайра байкап көрүңүз.', 'Не удалось выполнить действие. Попробуйте ещё раз.'));
-    } finally {
-      setBusyId(null);
-    }
-  };
+  if (!isAdmin) return null;
 
   return (
-    <div className="pt-4 border-t border-slate-200 space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-          <ShieldCheck className="w-4 h-4 text-slate-600" />
-          {L('Төлөм өтүнмөлөрү', 'Заявки на оплату')} ({requests.length})
+    <a
+      href="/#admin"
+      className="flex items-center justify-between gap-2 p-3 rounded-md border border-slate-300 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-900"
+    >
+      <span className="flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-slate-600" />
+        {L('Админ-панель', 'Админ-панель')}
+      </span>
+      {openCount > 0 && (
+        <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-xs">
+          {L(`${openCount} жаңы өтүнмө`, `${openCount} новых заявок`)}
         </span>
-        <button type="button" onClick={() => void reload().catch(() => {})} className="text-xs text-slate-500 hover:text-slate-900 underline cursor-pointer">
-          {L('Жаңылоо', 'Обновить')}
-        </button>
-      </div>
-      {requests.length === 0 ? (
-        <p className="text-xs text-slate-500">{L('Жаңы өтүнмөлөр жок.', 'Новых заявок нет.')}</p>
-      ) : (
-        <ul className="space-y-2">
-          {requests.map(request => (
-            <li key={request.id} className="p-3 rounded-md border border-slate-200 text-xs space-y-1.5">
-              <div className="flex flex-wrap items-center justify-between gap-1">
-                <strong className="text-slate-900 break-all">{request.email}</strong>
-                <span className="font-mono font-bold text-slate-900">{request.reference}</span>
-              </div>
-              <div className="text-slate-600">
-                {monthsLabel(request.months, lang)} · <strong className="font-mono">{formatSom(request.amountKgs)}</strong> ·{' '}
-                {formatDateTime(request.createdAt)}
-              </div>
-              {request.reportedAt ? (
-                <div className="text-emerald-700">
-                  {L('Төлөдүм деп билдирди:', 'Сообщил об оплате:')} {formatDateTime(request.reportedAt)}
-                  {request.payerNote && (
-                    <>
-                      {' '}
-                      · «{request.payerNote}»
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="text-slate-400">{L('Төлөм тууралуу билдирүү жок', 'Об оплате ещё не сообщил')}</div>
-              )}
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  disabled={busyId !== null}
-                  onClick={() => void decide(request, true)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer disabled:opacity-60"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  {L('Ырастоо', 'Подтвердить')}
-                </button>
-                <button
-                  type="button"
-                  disabled={busyId !== null}
-                  onClick={() => void decide(request, false)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-md border border-slate-300 hover:bg-slate-100 text-slate-700 cursor-pointer disabled:opacity-60"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  {L('Четке кагуу', 'Отклонить')}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
       )}
-      <ErrorLine text={error} />
-    </div>
+    </a>
   );
 };

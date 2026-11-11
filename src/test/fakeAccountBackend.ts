@@ -1,5 +1,5 @@
 import { AccessInfo, OPEN_ACCESS } from '../account/access';
-import { AccountBackend, AccountError, AccountUser, PaymentRequest } from '../account/backend';
+import { AccountBackend, AccountError, AccountUser, AdminPlan, AdminUser, PaymentRequest } from '../account/backend';
 import { PLANS, Plan } from '../config/plans';
 import { SavedTender } from '../types';
 
@@ -39,8 +39,18 @@ export class FakeAccountBackend implements AccountBackend {
   async verifyCode(email: string, code: string) {
     if (code !== VALID_CODE) throw new AccountError('invalid_code');
     this.user = { id: `user-${email}`, email };
+    const known = this.registry.get(this.user.id);
+    this.registry.set(this.user.id, {
+      email,
+      createdAt: known?.createdAt ?? new Date(Date.now() - this.registry.size * 1000).toISOString(),
+      lastSignInAt: new Date().toISOString()
+    });
     return this.user;
   }
+
+  /** Users who have signed in at least once */
+  registry = new Map<string, { email: string; createdAt: string; lastSignInAt: string | null }>();
+  hiddenPlans = new Set<string>();
 
   async signOut() {
     this.user = null;
@@ -78,7 +88,7 @@ export class FakeAccountBackend implements AccountBackend {
   }
 
   async listPlans() {
-    return this.plans.map(p => ({ ...p }));
+    return this.plans.filter(p => !this.hiddenPlans.has(p.id)).map(p => ({ ...p }));
   }
 
   async getOpenPayment(user: AccountUser) {
@@ -89,7 +99,7 @@ export class FakeAccountBackend implements AccountBackend {
   async requestPayment(planId: string) {
     const user = this.user;
     if (!user) throw new AccountError('forbidden');
-    const plan = this.plans.find(p => p.id === planId);
+    const plan = this.plans.find(p => p.id === planId && !this.hiddenPlans.has(p.id));
     if (!plan || plan.priceKgs === null) throw new AccountError('unknown');
     for (const p of this.payments) {
       if (p.userId === user.id && p.status === 'pending' && !p.reportedAt) p.status = 'cancelled';
@@ -159,4 +169,68 @@ export class FakeAccountBackend implements AccountBackend {
 
   /** Subscriptions granted by approvals, per user */
   paidUntilByUser = new Map<string, string>();
+
+  private async requireAdmin() {
+    if (!(await this.isAdmin())) throw new AccountError('forbidden');
+  }
+
+  async listRecentPayments() {
+    await this.requireAdmin();
+    return [...this.payments].reverse().map(p => this.strip(p));
+  }
+
+  async updateSettings(changes: { paywallEnabled?: boolean; loginRequired?: boolean }) {
+    await this.requireAdmin();
+    this.access = {
+      ...this.access,
+      paywallEnabled: changes.paywallEnabled ?? this.access.paywallEnabled,
+      loginRequired: changes.loginRequired ?? this.access.loginRequired
+    };
+  }
+
+  async adminListPlans(): Promise<AdminPlan[]> {
+    await this.requireAdmin();
+    return this.plans.map(p => ({ id: p.id, months: p.months, priceKgs: p.priceKgs ?? 0, active: !this.hiddenPlans.has(p.id) }));
+  }
+
+  async updatePlan(id: string, priceKgs: number, active: boolean) {
+    await this.requireAdmin();
+    const plan = this.plans.find(p => p.id === id);
+    if (!plan || !(priceKgs > 0)) throw new AccountError('unknown');
+    plan.priceKgs = priceKgs;
+    if (active) this.hiddenPlans.delete(id);
+    else this.hiddenPlans.add(id);
+  }
+
+  async listUsers(search: string): Promise<AdminUser[]> {
+    await this.requireAdmin();
+    const q = search.trim().toLowerCase();
+    return [...this.registry.entries()]
+      .filter(([, u]) => !q || u.email.toLowerCase().includes(q))
+      .sort((a, b) => Date.parse(b[1].createdAt) - Date.parse(a[1].createdAt))
+      .map(([id, u]) => ({
+        id,
+        email: u.email,
+        createdAt: u.createdAt,
+        lastSignInAt: u.lastSignInAt,
+        paidUntil: this.paidUntilByUser.get(id) ?? null,
+        plan: this.paidUntilByUser.has(id) ? 'manual' : null,
+        isAdmin: this.admins.has(u.email.toLowerCase())
+      }));
+  }
+
+  async extendSubscription(userId: string, months: number) {
+    await this.requireAdmin();
+    const current = this.paidUntilByUser.get(userId);
+    const from = current && Date.parse(current) > Date.now() ? new Date(current) : new Date();
+    from.setMonth(from.getMonth() + months);
+    this.paidUntilByUser.set(userId, from.toISOString());
+    return from.toISOString();
+  }
+
+  async setSubscription(userId: string, paidUntil: string | null) {
+    await this.requireAdmin();
+    if (paidUntil) this.paidUntilByUser.set(userId, paidUntil);
+    else this.paidUntilByUser.delete(userId);
+  }
 }

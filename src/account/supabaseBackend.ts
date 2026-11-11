@@ -2,7 +2,7 @@ import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { SavedTender } from '../types';
 import { MAX_SAVED_TENDERS, sanitizeSavedTenders } from '../utils/storage';
 import { AccessInfo, normalizeCode } from './access';
-import { AccountBackend, AccountError, AccountUser, PaymentRequest, PaymentStatus } from './backend';
+import { AccountBackend, AccountError, AccountUser, AdminPlan, AdminUser, PaymentRequest, PaymentStatus } from './backend';
 import { PLANS, Plan } from '../config/plans';
 
 interface ErrorLike {
@@ -105,6 +105,29 @@ export function rowsToPlans(rows: unknown): Plan[] {
     .filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null)
     .filter(r => typeof r.id === 'string' && Number(r.months) > 0 && Number(r.price_kgs) > 0)
     .map(r => ({ id: r.id as string, months: Number(r.months), priceKgs: Number(r.price_kgs) }));
+}
+
+export function rowsToAdminPlans(rows: unknown): AdminPlan[] {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null && typeof r.id === 'string')
+    .map(r => ({ id: r.id as string, months: Number(r.months) || 0, priceKgs: Number(r.price_kgs) || 0, active: r.active !== false }));
+}
+
+export function rowsToAdminUsers(rows: unknown): AdminUser[] {
+  if (!Array.isArray(rows)) return [];
+  const text = (v: unknown) => (typeof v === 'string' ? v : null);
+  return rows
+    .filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null && typeof r.user_id === 'string')
+    .map(r => ({
+      id: r.user_id as string,
+      email: text(r.email) ?? '',
+      createdAt: text(r.created_at) ?? '',
+      lastSignInAt: text(r.last_sign_in_at),
+      paidUntil: text(r.paid_until),
+      plan: text(r.plan),
+      isAdmin: r.is_admin === true
+    }));
 }
 
 export function createSupabaseBackend(url: string, key: string, client?: SupabaseClient): AccountBackend {
@@ -265,6 +288,52 @@ export function createSupabaseBackend(url: string, key: string, client?: Supabas
 
     async rejectPayment(id) {
       const { error } = await supabase.rpc('reject_payment_request', { p_id: id });
+      if (error) throw describeDbError(error);
+    },
+
+    async listRecentPayments() {
+      const { data, error } = await supabase
+        .from('payment_requests')
+        .select(PAYMENT_COLUMNS)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw describeDbError(error);
+      return (Array.isArray(data) ? data : []).map(rowToPayment).filter((p): p is PaymentRequest => p !== null);
+    },
+
+    async updateSettings(changes) {
+      const { error } = await supabase.rpc('admin_update_settings', {
+        p_paywall: changes.paywallEnabled ?? null,
+        p_login_required: changes.loginRequired ?? null
+      });
+      if (error) throw describeDbError(error);
+    },
+
+    async adminListPlans() {
+      const { data, error } = await supabase.rpc('admin_list_plans');
+      if (error) throw describeDbError(error);
+      return rowsToAdminPlans(data);
+    },
+
+    async updatePlan(id, priceKgs, active) {
+      const { error } = await supabase.rpc('admin_update_plan', { p_id: id, p_price_kgs: priceKgs, p_active: active });
+      if (error) throw describeDbError(error);
+    },
+
+    async listUsers(search) {
+      const { data, error } = await supabase.rpc('admin_list_users', { p_search: search.trim() || null });
+      if (error) throw describeDbError(error);
+      return rowsToAdminUsers(data);
+    },
+
+    async extendSubscription(userId, months) {
+      const { data, error } = await supabase.rpc('admin_extend_subscription', { p_user: userId, p_months: months });
+      if (error) throw describeDbError(error);
+      return typeof data === 'string' ? data : '';
+    },
+
+    async setSubscription(userId, paidUntil) {
+      const { error } = await supabase.rpc('admin_set_subscription', { p_user: userId, p_paid_until: paidUntil });
       if (error) throw describeDbError(error);
     }
   };

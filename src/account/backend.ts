@@ -25,6 +25,25 @@ export interface PaymentRequest {
   createdAt: string;
 }
 
+/** A plan as the administrator sees it, including hidden ones */
+export interface AdminPlan {
+  id: string;
+  months: number;
+  priceKgs: number;
+  active: boolean;
+}
+
+/** A user as the administrator sees it */
+export interface AdminUser {
+  id: string;
+  email: string;
+  createdAt: string;
+  lastSignInAt: string | null;
+  paidUntil: string | null;
+  plan: string | null;
+  isAdmin: boolean;
+}
+
 export type AccountErrorKind =
   | 'rate_limit'
   | 'invalid_code'
@@ -74,4 +93,17 @@ export interface AccountBackend {
   /** Administrator: the money arrived — extends the subscription; returns the new end date */
   approvePayment(id: string): Promise<string>;
   rejectPayment(id: string): Promise<void>;
+  /** Administrator: recent payment requests of every status, newest first */
+  listRecentPayments(): Promise<PaymentRequest[]>;
+
+  /** Administrator: site switches; undefined keeps the current value */
+  updateSettings(changes: { paywallEnabled?: boolean; loginRequired?: boolean }): Promise<void>;
+  adminListPlans(): Promise<AdminPlan[]>;
+  updatePlan(id: string, priceKgs: number, active: boolean): Promise<void>;
+  /** Administrator: users with subscriptions, newest first; optional search by email */
+  listUsers(search: string): Promise<AdminUser[]>;
+  /** Administrator: adds months from the current end (or today); returns the new end date */
+  extendSubscription(userId: string, months: number): Promise<string>;
+  /** Administrator: exact end date; null removes the subscription */
+  setSubscription(userId: string, paidUntil: string | null): Promise<void>;
 }

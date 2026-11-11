@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import App from './App';
 import { Landing } from './components/Landing';
+import { AdminPanel } from './components/AdminPanel';
 import { useAccount } from './account/AccountContext';
 
 const STORAGE_KEY_LOGIN_REQUIRED = 'kg_tender_calc_login_required_v1';
@@ -28,6 +29,12 @@ const Splash = () => (
  */
 export default function Root() {
   const account = useAccount();
+  const [hash, setHash] = useState(() => window.location.hash);
+  useEffect(() => {
+    const onHashChange = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
   const cachedRequired = useRef(readCachedLoginRequired()).current;
 
   // Remember the setting so returning visitors do not wait for it on every visit
@@ -51,6 +58,8 @@ export default function Root() {
     wasLanding.current = showLanding;
   }, [showLanding, user, closeAccount]);
 
+  // The administrator panel has its own sign-in screen and ignores the guest introduction page
+  if (hash === '#admin') return <AdminPanel />;
   if (required === null || (required && !account.ready)) return <Splash />;
   if (showLanding) return <Landing />;
   return <App />;
