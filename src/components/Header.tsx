@@ -1,7 +1,7 @@
 import React from 'react';
 import { CurrencySymbol, Language } from '../types';
 import { translations } from '../i18n/translations';
-import { RotateCcw, Printer, BookmarkCheck, FileSpreadsheet } from 'lucide-react';
+import { RotateCcw, Printer, BookmarkCheck } from 'lucide-react';
 
 interface HeaderProps {
   lang: Language;
@@ -28,45 +28,47 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-30 shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Zone 1: Brand & Wordmark */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="w-9 h-9 rounded-md bg-emerald-600 flex items-center justify-center font-bold text-white shadow-sm ring-1 ring-emerald-400/30">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 shrink-0 rounded-md bg-emerald-600 flex items-center justify-center font-bold text-white shadow-sm ring-1 ring-emerald-400/30">
             <span className="text-sm font-mono tracking-tighter">KG</span>
           </div>
-          <div className="flex flex-col">
+          <div className="hidden sm:flex flex-col min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-base sm:text-lg font-bold tracking-tight text-white whitespace-nowrap">
+              <span className="text-base xl:text-lg font-bold tracking-tight text-white truncate">
                 {t.appTitle}
               </span>
               <span className="hidden lg:inline text-xs font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-700/50 px-2 py-0.5 rounded">
                 zakupki.okmot.kg
               </span>
             </div>
-            <span className="text-xs text-slate-400 hidden sm:inline truncate max-w-md">
+            <span className="text-xs text-slate-400 hidden xl:inline truncate max-w-md">
               {t.appSubtitle}
             </span>
           </div>
         </div>
 
         {/* Zone 2: Navigation & Quick Utilities */}
-        <div className="hidden md:flex items-center gap-2 text-xs font-medium text-slate-300">
+        <div className="flex items-center gap-0.5 md:gap-2 text-xs font-medium text-slate-300">
           <button
             type="button"
             onClick={onOpenTemplates}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-lg:px-2"
             title={t.loadTemplates}
+            aria-label={t.loadTemplates}
           >
             <BookmarkCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{t.loadTemplates}</span>
+            <span className="hidden lg:inline">{t.loadTemplates}</span>
           </button>
 
           <button
             type="button"
             onClick={onPrint}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap max-lg:px-2"
             title={t.printReport}
+            aria-label={t.printReport}
           >
             <Printer className="w-3.5 h-3.5 text-slate-400" />
-            <span>{t.printReport}</span>
+            <span className="hidden lg:inline">{t.printReport}</span>
           </button>
 
           <button
@@ -74,9 +76,10 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onReset}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer border border-transparent hover:border-slate-700 whitespace-nowrap"
             title={t.resetData}
+            aria-label={t.resetData}
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>{t.resetData}</span>
+            <span className="hidden lg:inline">{t.resetData}</span>
           </button>
         </div>
 

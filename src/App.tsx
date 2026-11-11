@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CurrencySymbol, Language, SpecificationItem, TenderParams } from './types';
 import { DEFAULT_SPECIFICATION_ITEMS, INITIAL_TENDER_PARAMS, TenderTemplate } from './data/defaultTemplates';
-import { calculateTender } from './utils/taxCalculator';
+import { calculateTender, TAX_REGIMES } from './utils/taxCalculator';
 import { translations } from './i18n/translations';
 import { Header } from './components/Header';
 import { TenderParamsBlock } from './components/TenderParamsBlock';
@@ -21,6 +21,54 @@ const STORAGE_KEY_ITEMS = 'kg_tender_calc_items_v1';
 const STORAGE_KEY_DISCOUNT = 'kg_tender_calc_discount_v1';
 const STORAGE_KEY_LANG = 'kg_tender_calc_lang_v1';
 const STORAGE_KEY_CURRENCY = 'kg_tender_calc_currency_v1';
+
+const MAX_DISCOUNT = 40;
+
+const toNonNegative = (value: unknown, fallback: number): number => {
+  const num = typeof value === 'number' ? value : parseFloat(String(value));
+  return Number.isFinite(num) && num >= 0 ? num : fallback;
+};
+
+/** Validates specification rows restored from localStorage. */
+function sanitizeItems(raw: unknown): SpecificationItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw
+    .filter((it): it is Record<string, unknown> => typeof it === 'object' && it !== null)
+    .map((it, idx) => {
+      const quantity = toNonNegative(it.quantity, 0);
+      const unitPrice = toNonNegative(it.unitPrice, 0);
+      return {
+        id: typeof it.id === 'string' && it.id ? it.id : `item-restored-${idx}`,
+        name: typeof it.name === 'string' ? it.name : '',
+        unit: typeof it.unit === 'string' ? it.unit : '',
+        quantity,
+        unitPrice,
+        total: quantity * unitPrice
+      };
+    });
+}
+
+/** Validates tender parameters restored from localStorage. */
+function sanitizeParams(raw: unknown): TenderParams {
+  if (typeof raw !== 'object' || raw === null) return INITIAL_TENDER_PARAMS;
+  const p = raw as Record<string, unknown>;
+  const d = INITIAL_TENDER_PARAMS;
+  return {
+    plannedPrice: toNonNegative(p.plannedPrice, d.plannedPrice),
+    taxRegime: typeof p.taxRegime === 'string' && p.taxRegime in TAX_REGIMES
+      ? (p.taxRegime as TenderParams['taxRegime'])
+      : d.taxRegime,
+    customTaxRate: Math.min(100, toNonNegative(p.customTaxRate, d.customTaxRate)),
+    customTaxBase: p.customTaxBase === 'profit' ? 'profit' : 'revenue',
+    inputVatIncluded: typeof p.inputVatIncluded === 'boolean' ? p.inputVatIncluded : d.inputVatIncluded,
+    logisticsCost: toNonNegative(p.logisticsCost, d.logisticsCost),
+    guaranteeType: p.guaranteeType === 'fixed' ? 'fixed' : 'percent',
+    guaranteeValue: toNonNegative(p.guaranteeValue, d.guaranteeValue),
+    otherExpenses: toNonNegative(p.otherExpenses, d.otherExpenses),
+    directGoodsCost: toNonNegative(p.directGoodsCost, d.directGoodsCost),
+    syncWithSpec: typeof p.syncWithSpec === 'boolean' ? p.syncWithSpec : d.syncWithSpec
+  };
+}
 
 export default function App() {
   // Main language state: DEFAULT IS KYRGYZ ('ky') as strictly required
@@ -48,7 +96,10 @@ export default function App() {
   const [items, setItems] = useState<SpecificationItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_ITEMS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const restored = sanitizeItems(JSON.parse(saved));
+        if (restored) return restored;
+      }
     } catch {
       // ignore
     }
@@ -65,8 +116,7 @@ export default function App() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_PARAMS);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        return { ...INITIAL_TENDER_PARAMS, ...parsed };
+        return sanitizeParams(JSON.parse(saved));
       }
     } catch {
       // ignore
@@ -80,7 +130,7 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_DISCOUNT);
       if (saved) {
         const num = parseFloat(saved);
-        if (!isNaN(num) && num >= 0 && num <= 40) return num;
+        if (!isNaN(num) && num >= 0 && num <= MAX_DISCOUNT) return num;
       }
     } catch {
       // ignore
@@ -128,6 +178,7 @@ export default function App() {
   }, [discount]);
 
   useEffect(() => {
+    document.documentElement.lang = lang;
     try {
       localStorage.setItem(STORAGE_KEY_LANG, lang);
     } catch {
@@ -142,6 +193,19 @@ export default function App() {
       // ignore
     }
   }, [currency]);
+
+  // Close modals with the Escape key
+  useEffect(() => {
+    if (!isTemplatesOpen && !isPrintOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsTemplatesOpen(false);
+        setIsPrintOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isTemplatesOpen, isPrintOpen]);
 
   // Main calculation result
   const calculationResult = useMemo(() => {
@@ -163,7 +227,7 @@ export default function App() {
   const handleSelectTemplate = (tmpl: TenderTemplate) => {
     setParams(tmpl.params);
     setItems(tmpl.items);
-    setDiscount(tmpl.defaultDiscount);
+    setDiscount(Math.max(0, Math.min(MAX_DISCOUNT, tmpl.defaultDiscount)));
   };
 
   const handleReset = () => {
@@ -177,7 +241,9 @@ export default function App() {
   const t = translations[lang];
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col selection:bg-slate-300">
+    <div className="min-h-screen print:min-h-0 print:bg-white bg-slate-100/70 text-slate-900 flex flex-col selection:bg-slate-300">
+      {/* While the print preview is open only the report itself must be printed */}
+      <div className={isPrintOpen ? 'no-print contents' : 'contents'}>
       {/* 3-Zone Top Navigation Contract */}
       <Header
         lang={lang}
@@ -229,6 +295,7 @@ export default function App() {
           onApplyToCost={handleApplySpecToCost}
         />
       </main>
+      </div>
 
       {/* Strict Financial Footer */}
       <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-6 mt-12 no-print text-xs">
@@ -236,17 +303,17 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-white tracking-tight">{t.appTitle}</span>
             <span aria-hidden="true">·</span>
-            <span>Кыргыз Республикасынын 2026-жылдагы Салык кодекси</span>
+            <span>{lang === 'ky' ? 'Кыргыз Республикасынын Салык кодекси' : 'Налоговый кодекс Кыргызской Республики'}</span>
           </div>
 
           <div className="flex items-center gap-4 text-slate-400">
             <a
-              href="http://zakupki.okmot.kg"
+              href="https://zakupki.okmot.kg"
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="hover:text-white transition-colors underline"
             >
-              zakupki.okmot.kg (Мамлекеттик сатып алуулар)
+              zakupki.okmot.kg ({lang === 'ky' ? 'Мамлекеттик сатып алуулар' : 'Государственные закупки'})
             </a>
             <span aria-hidden="true">·</span>
             <span>Валюта: KGS / RUB</span>

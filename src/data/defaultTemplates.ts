@@ -99,7 +99,7 @@ export const TENDER_TEMPLATES: TenderTemplate[] = [
       guaranteeType: 'percent',
       guaranteeValue: 2,
       otherExpenses: 12000,
-      directGoodsCost: 615000,
+      directGoodsCost: 615300,
       syncWithSpec: true
     },
     items: [
@@ -141,7 +141,7 @@ export const TENDER_TEMPLATES: TenderTemplate[] = [
         unit: 'кг',
         quantity: 450,
         unitPrice: 70,
-        total: 31200
+        total: 31500
       }
     ],
     defaultDiscount: 4.0

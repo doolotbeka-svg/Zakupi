@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CurrencySymbol, Language, SpecificationItem } from '../types';
 import { translations } from '../i18n/translations';
-import { downloadSpecificationTemplate, exportTenderToExcel, parseUploadedFile } from '../utils/excel';
+
 import { CalculationResult, TenderParams } from '../types';
 import { formatCurrency } from '../utils/taxCalculator';
 import { 
@@ -10,11 +10,9 @@ import {
   FileSpreadsheet, 
   Upload, 
   Download, 
-  RefreshCw, 
   Copy, 
   AlertCircle, 
-  Check, 
-  Sparkles,
+  Check,
   ArrowRight
 } from 'lucide-react';
 
@@ -38,16 +36,32 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
   onApplyToCost
 }) => {
   const t = translations[lang];
+  // The spreadsheet library is heavy, so it is loaded only when import / export is used
+  const loadExcel = () => import('../utils/excel');
+  const L = (ky: string, ru: string) => (lang === 'ky' ? ky : ru);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; isError?: boolean } | null>(null);
+  const statusTimerRef = useRef<number | undefined>(undefined);
+
+  const newId = () => `item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const showStatus = (message: { text: string; isError?: boolean }, hideAfterMs?: number) => {
+    window.clearTimeout(statusTimerRef.current);
+    setStatusMessage(message);
+    if (hideAfterMs) {
+      statusTimerRef.current = window.setTimeout(() => setStatusMessage(null), hideAfterMs);
+    }
+  };
+
+  useEffect(() => () => window.clearTimeout(statusTimerRef.current), []);
 
   const totalQuantity = items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
   const totalCost = items.reduce((acc, it) => acc + (Number(it.total) || 0), 0);
 
   const handleAddItem = () => {
     const newItem: SpecificationItem = {
-      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      id: newId(),
       name: '',
       unit: lang === 'ky' ? 'даана' : 'шт',
       quantity: 1,
@@ -63,7 +77,9 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
       const updated = { ...it, ...updates };
       const qty = Math.max(0, Number(updated.quantity) || 0);
       const price = Math.max(0, Number(updated.unitPrice) || 0);
-      updated.total = qty * price;
+      updated.quantity = qty;
+      updated.unitPrice = price;
+      updated.total = Math.round(qty * price * 100) / 100;
       return updated;
     });
     onItemsChange(next);
@@ -76,10 +92,14 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
   const handleDuplicateItem = (item: SpecificationItem) => {
     const duplicate: SpecificationItem = {
       ...item,
-      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      id: newId(),
       name: `${item.name} (${lang === 'ky' ? 'көчүрмө' : 'копия'})`
     };
-    onItemsChange([...items, duplicate]);
+    // Insert the copy right after the original row
+    const index = items.findIndex(it => it.id === item.id);
+    const next = [...items];
+    next.splice(index === -1 ? items.length : index + 1, 0, duplicate);
+    onItemsChange(next);
   };
 
   const handleClearTable = () => {
@@ -97,19 +117,26 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
 
   const processFile = async (file: File) => {
     try {
-      setStatusMessage({ text: lang === 'ky' ? 'Файл жүктөлүп жатат...' : 'Обработка файла...' });
+      showStatus({ text: L('Файл жүктөлүп жатат...', 'Обработка файла...') });
+      const { parseUploadedFile } = await loadExcel();
       const parsedItems = await parseUploadedFile(file);
       onItemsChange(parsedItems);
-      setStatusMessage({ text: `${t.importSuccessMsg} (${parsedItems.length} позиция)` });
-      setTimeout(() => setStatusMessage(null), 4000);
+      showStatus({ text: `${t.importSuccessMsg} (${parsedItems.length} ${L('позиция', 'поз.')})` }, 4000);
     } catch (err: unknown) {
       console.error(err);
-      setStatusMessage({ 
-        text: err instanceof Error ? err.message : t.importErrorMsg, 
-        isError: true 
-      });
-      setTimeout(() => setStatusMessage(null), 6000);
+      showStatus({ text: t.importErrorMsg, isError: true }, 6000);
     }
+  };
+
+  const reportExcelError = (err: unknown) => {
+    console.error(err);
+    showStatus({ text: t.importErrorMsg, isError: true }, 6000);
+  };
+
+  const handleDownloadTemplate = () => {
+    loadExcel()
+      .then(m => m.downloadSpecificationTemplate(lang))
+      .catch(reportExcelError);
   };
 
   const handleDrop = async (e: React.DragEvent) => {
@@ -144,7 +171,11 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
           {/* Export to Excel (.xlsx) */}
           <button
             type="button"
-            onClick={() => exportTenderToExcel(params, result, items, lang, currency)}
+            onClick={() => {
+              loadExcel()
+                .then(m => m.exportTenderToExcel(params, result, items, lang, currency))
+                .catch(reportExcelError);
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs shadow-xs cursor-pointer transition-colors whitespace-nowrap"
             title={t.exportExcelBtn}
           >
@@ -173,7 +204,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
           {/* Download Template */}
           <button
             type="button"
-            onClick={() => downloadSpecificationTemplate(lang)}
+            onClick={handleDownloadTemplate}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-slate-100 text-slate-600 hover:text-slate-900 text-xs border border-transparent hover:border-slate-200 cursor-pointer transition-colors"
             title={t.downloadTemplateBtn}
           >
@@ -212,7 +243,10 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
       {/* Drop Target Wrapper */}
       <div
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={() => setIsDragging(false)}
+        onDragLeave={(e) => {
+          // Ignore leave events fired while moving between child elements
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragging(false);
+        }}
         onDrop={handleDrop}
         className={`relative ${isDragging ? 'ring-2 ring-emerald-500 bg-emerald-50/20' : ''}`}
       >
@@ -238,7 +272,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => downloadSpecificationTemplate(lang)}
+                onClick={handleDownloadTemplate}
                 className="px-4 py-2 rounded-md bg-slate-100 text-slate-800 text-xs font-semibold cursor-pointer hover:bg-slate-200 border border-slate-300"
               >
                 {t.downloadTemplateBtn}
@@ -285,7 +319,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
                         value={item.unit}
                         onChange={(e) => handleUpdateItem(item.id, { unit: e.target.value })}
                         className="w-full text-center bg-transparent hover:bg-white focus:bg-white px-2 py-1.5 rounded border border-transparent hover:border-slate-300 focus:border-slate-800 focus:outline-none text-slate-600"
-                        placeholder="даана"
+                        placeholder={L('даана', 'шт')}
                       />
                     </td>
 
@@ -294,7 +328,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
                       <input
                         type="number"
                         min="0"
-                        step="1"
+                        step="any"
                         value={item.quantity || ''}
                         onChange={(e) => handleUpdateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
                         className="w-full text-right font-mono bg-transparent hover:bg-white focus:bg-white px-2 py-1.5 rounded border border-transparent hover:border-slate-300 focus:border-slate-800 focus:outline-none tabular-nums font-semibold text-slate-900"
@@ -306,7 +340,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
                       <input
                         type="number"
                         min="0"
-                        step="10"
+                        step="any"
                         value={item.unitPrice || ''}
                         onChange={(e) => handleUpdateItem(item.id, { unitPrice: parseFloat(e.target.value) || 0 })}
                         className="w-full text-right font-mono bg-transparent hover:bg-white focus:bg-white px-2 py-1.5 rounded border border-transparent hover:border-slate-300 focus:border-slate-800 focus:outline-none tabular-nums font-semibold text-slate-900"
@@ -325,7 +359,8 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
                           type="button"
                           onClick={() => handleDuplicateItem(item)}
                           className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-200 cursor-pointer transition-colors"
-                          title="Көчүрүү"
+                          title={L('Көчүрүү', 'Дублировать')}
+                          aria-label={L('Көчүрүү', 'Дублировать')}
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
@@ -333,7 +368,8 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
                           type="button"
                           onClick={() => handleDeleteItem(item.id)}
                           className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
-                          title="Өчүрүү"
+                          title={L('Өчүрүү', 'Удалить')}
+                          aria-label={L('Өчүрүү', 'Удалить')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -364,6 +400,7 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
                       onClick={handleClearTable}
                       className="text-slate-400 hover:text-rose-600 text-[11px] cursor-pointer"
                       title={t.clearTableBtn}
+                      aria-label={t.clearTableBtn}
                     >
                       <Trash2 className="w-3.5 h-3.5 mx-auto" />
                     </button>
@@ -380,9 +417,9 @@ export const SpecificationTable: React.FC<SpecificationTableProps> = ({
         <div className="flex items-center gap-2 text-slate-600">
           <span className="font-medium">{t.itemsTotalCount}: <strong className="text-slate-900">{items.length}</strong></span>
           <span aria-hidden="true">·</span>
-          <span>{t.itemsTotalUnits}: <strong className="text-slate-900 font-mono">{totalQuantity}</strong></span>
+          <span>{t.itemsTotalUnits}: <strong className="text-slate-900 font-mono">{totalQuantity.toLocaleString('ru-RU')}</strong></span>
           <span aria-hidden="true">·</span>
-          <span>Жалпы закуп: <strong className="text-slate-900 font-mono">{formatCurrency(totalCost, currency)}</strong></span>
+          <span>{L('Жалпы сатып алуу', 'Итого закуп')}: <strong className="text-slate-900 font-mono">{formatCurrency(totalCost, currency)}</strong></span>
         </div>
 
         <div className="flex items-center gap-2">

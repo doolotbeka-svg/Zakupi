@@ -27,7 +27,7 @@ export function exportTenderToExcel(
     [isKy ? `Пландалган сатып алуу суммасы (${currency})` : `Планируемая сумма закупки (${currency})`, params.plannedPrice],
     [isKy ? 'Тооруктагы бааны төмөндөтүү (%)' : 'Процент снижения цены на торгах (%)', `${result.discountPercent}%`],
     [isKy ? `Төмөндөтүлгөн сумма (${currency})` : `Сумма снижения цены (${currency})`, result.priceDropSum],
-    [isKy ? `Итоговая цена контракта (${currency})` : `Итоговая цена контракта (${currency})`, result.finalContractPrice],
+    [isKy ? `Келишимдин акыркы баасы (${currency})` : `Итоговая цена контракта (${currency})`, result.finalContractPrice],
     [isKy ? 'Салык режими' : 'Налоговый режим', regime.name[lang]],
     [''],
     [isKy ? '2. ӨЗДҮК НАРК ЖАНА ЧЫГЫМДАР' : '2. СЕБЕСТОИМОСТЬ И РАСХОДЫ', ''],
@@ -47,7 +47,7 @@ export function exportTenderToExcel(
     [isKy ? `Өз алдынча киргизилген салык (${currency})` : `Индивидуальный налог (${currency})`, result.taxes.customTax],
     [isKy ? `ИТОГО САЛЫКТАР (${currency})` : `ИТОГО НАЛОГИ (${currency})`, result.taxes.totalTax],
     [''],
-    [isKy ? '4. КАРЖЫЛЫК ЖЫЙЫНТЫК ЖАНА БЕЗУБЫТОЧНОСТЬ' : '4. ФИНАНСОВЫЙ ИТОГ И БЕЗУБЫТОЧНОСТЬ', ''],
+    [isKy ? '4. КАРЖЫЛЫК ЖЫЙЫНТЫК ЖАНА ЧЫГЫМСЫЗДЫК' : '4. ФИНАНСОВЫЙ ИТОГ И БЕЗУБЫТОЧНОСТЬ', ''],
     [isKy ? `ТАЗА КИРЕШЕ / ЧИСТАЯ ПРИБЫЛЬ (${currency})` : `ЧИСТАЯ ПРИБЫЛЬ / ТАЗА КИРЕШЕ (${currency})`, result.netProfit],
     [isKy ? 'Рентабелдүүлүк (кирешеден %)' : 'Рентабельность (% от цены контракта)', `${result.profitabilityPercent.toFixed(2)}%`],
     [isKy ? 'Чыгымдардын рентабелдүүлүгү (ROI %)' : 'Рентабельность расходов (ROI %)', `${result.roiPercent.toFixed(2)}%`],
@@ -151,92 +151,171 @@ export function downloadSpecificationTemplate(lang: Language = 'ky'): void {
   XLSX.writeFile(wb, `Tender_Spec_Template_${lang}.xlsx`);
 }
 
+const NAME_KEYS = ['наименов', 'аталыш', 'товар', 'name', 'предмет', 'описан'];
+const QTY_KEYS = ['саны', 'колич', 'кол-во', 'qty', 'quantity'];
+const PRICE_KEYS = ['баа', 'цена', 'price', 'стоим'];
+const UNIT_KEYS = ['бирди', 'изм', 'unit'];
+const TOTAL_KEYS = ['итог', 'жалпы', 'всего', 'сумма', 'общ', 'total'];
+
+interface ColumnMap {
+  headerRowIndex: number;
+  name: number;
+  unit: number;
+  qty: number;
+  price: number;
+}
+
+function newItemId(): string {
+  return `item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Parses numbers written as "1 200,50", "1200.5", "1,200.50" or "1.200,50".
+ */
+function parseLocaleNumber(raw: unknown): number {
+  if (typeof raw === 'number') return raw;
+  if (raw === null || raw === undefined) return NaN;
+  let str = String(raw).replace(/[\s  ']/g, '').replace(/[^\d.,-]/g, '');
+  if (!str) return NaN;
+  const lastComma = str.lastIndexOf(',');
+  const lastDot = str.lastIndexOf('.');
+  if (lastComma !== -1 && lastDot !== -1) {
+    // The right-most separator is the decimal one
+    str = lastComma > lastDot ? str.replace(/\./g, '').replace(',', '.') : str.replace(/,/g, '');
+  } else if (lastComma !== -1) {
+    str = str.replace(/,/g, (_m, offset: number) => (offset === lastComma ? '.' : ''));
+  }
+  return parseFloat(str);
+}
+
+/**
+ * Looks for the header row (name + quantity/price columns) within the first rows of a sheet.
+ */
+function detectColumns(rows: unknown[][]): ColumnMap | null {
+  for (let r = 0; r < Math.min(20, rows.length); r++) {
+    const row = rows[r];
+    if (!Array.isArray(row)) continue;
+
+    let name = -1;
+    let qty = -1;
+    let price = -1;
+    let unit = -1;
+
+    for (let idx = 0; idx < row.length; idx++) {
+      const cell = row[idx];
+      if (typeof cell !== 'string') continue;
+      const val = cell.toLowerCase().trim();
+      const has = (keys: string[]) => keys.some(k => val.includes(k));
+
+      // Unit goes first: "Ед. изм." / "Өлчөө бирдиги" must not be mistaken for anything else,
+      // and total columns ("Жалпы сумма", "Общая стоимость") must not override the unit price.
+      if (unit === -1 && has(UNIT_KEYS) && !has(PRICE_KEYS)) {
+        unit = idx;
+      } else if (qty === -1 && has(QTY_KEYS)) {
+        qty = idx;
+      } else if (has(TOTAL_KEYS)) {
+        continue;
+      } else if (price === -1 && has(PRICE_KEYS)) {
+        price = idx;
+      } else if (name === -1 && has(NAME_KEYS)) {
+        name = idx;
+      }
+    }
+
+    if (name !== -1 && (qty !== -1 || price !== -1)) {
+      return { headerRowIndex: r, name, unit, qty, price };
+    }
+  }
+  return null;
+}
+
+/**
+ * Reads a workbook. CSV files are decoded manually (UTF-8 with Windows-1251 fallback),
+ * because SheetJS treats raw CSV bytes as Latin-1 and garbles Cyrillic text.
+ */
+function readWorkbook(buffer: ArrayBuffer, fileName: string): XLSX.WorkBook {
+  const isText = /\.(csv|txt|tsv)$/i.test(fileName);
+  if (!isText) {
+    return XLSX.read(buffer, { type: 'array' });
+  }
+
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    text = new TextDecoder('windows-1251').decode(buffer);
+  }
+  // raw: true keeps cells as text so "1200,5" is not misread as 12005
+  return XLSX.read(text.replace(/^﻿/, ''), { type: 'string', raw: true });
+}
+
 /**
  * Parses an uploaded Excel or CSV file into SpecificationItem array.
  */
 export async function parseUploadedFile(file: File): Promise<SpecificationItem[]> {
   const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: 'array' });
-  const sheetName = wb.SheetNames[0];
-  if (!sheetName) throw new Error('Empty workbook');
+  const wb = readWorkbook(buffer, file.name);
+  if (wb.SheetNames.length === 0) throw new Error('Empty workbook');
 
-  const sheet = wb.Sheets[sheetName];
-  const rawRows = (XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown) as unknown[][];
+  // Prefer the first sheet that has a recognisable header (our own export keeps
+  // the specification on the second sheet); otherwise fall back to the first sheet.
+  let rawRows: unknown[][] = [];
+  let columns: ColumnMap | null = null;
+
+  for (const sheetName of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 }) as unknown[][];
+    const detected = detectColumns(rows);
+    if (detected) {
+      rawRows = rows;
+      columns = detected;
+      break;
+    }
+  }
+
+  if (!columns) {
+    rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as unknown[][];
+    // Default layout of the downloadable template: № | name | unit | qty | price | total
+    columns = { headerRowIndex: 0, name: 1, unit: 2, qty: 3, price: 4 };
+  }
 
   if (!rawRows || rawRows.length < 2) {
     throw new Error('Not enough rows in file');
   }
 
-  // Find header row by looking for keywords
-  let headerRowIndex = 0;
-  let nameColIdx = 1;
-  let unitColIdx = 2;
-  let qtyColIdx = 3;
-  let priceColIdx = 4;
-
-  for (let r = 0; r < Math.min(5, rawRows.length); r++) {
-    const row = rawRows[r];
-    if (!Array.isArray(row)) continue;
-
-    let foundName = -1;
-    let foundQty = -1;
-    let foundPrice = -1;
-    let foundUnit = -1;
-
-    row.forEach((cell, idx) => {
-      if (typeof cell !== 'string') return;
-      const val = cell.toLowerCase().trim();
-      if (val.includes('наименов') || val.includes('аталыш') || val.includes('товар') || val.includes('name') || val.includes('предмет')) {
-        foundName = idx;
-      } else if (val.includes('саны') || val.includes('колич') || val.includes('qty') || val.includes('кол-во')) {
-        foundQty = idx;
-      } else if (val.includes('баа') || val.includes('цена') || val.includes('price') || val.includes('стоим')) {
-        foundPrice = idx;
-      } else if (val.includes('бирдик') || val.includes('изм') || val.includes('unit')) {
-        foundUnit = idx;
-      }
-    });
-
-    if (foundName !== -1 && (foundQty !== -1 || foundPrice !== -1)) {
-      headerRowIndex = r;
-      nameColIdx = foundName;
-      if (foundQty !== -1) qtyColIdx = foundQty;
-      if (foundPrice !== -1) priceColIdx = foundPrice;
-      if (foundUnit !== -1) unitColIdx = foundUnit;
-      break;
-    }
-  }
-
   const items: SpecificationItem[] = [];
 
-  for (let i = headerRowIndex + 1; i < rawRows.length; i++) {
+  for (let i = columns.headerRowIndex + 1; i < rawRows.length; i++) {
     const row = rawRows[i];
     if (!Array.isArray(row) || row.length === 0) continue;
 
-    const rawName = row[nameColIdx];
-    if (!rawName || typeof rawName !== 'string' || !rawName.trim()) continue;
+    const rawName = row[columns.name];
+    if (rawName === null || rawName === undefined) continue;
+    const name = String(rawName).trim();
+    if (!name) continue;
 
-    const name = rawName.trim();
     // Skip summary / total rows
-    if (name.toLowerCase().includes('итого') || name.toLowerCase().includes('жалпы') || name.toLowerCase().includes('всего')) {
+    const lowerName = name.toLowerCase();
+    if (lowerName.startsWith('итого') || lowerName.startsWith('жалпы /') || lowerName.startsWith('всего')) {
       continue;
     }
 
-    const rawUnit = unitColIdx !== -1 && row[unitColIdx] ? String(row[unitColIdx]).trim() : 'даана';
-    const rawQty = row[qtyColIdx];
-    const rawPrice = row[priceColIdx];
+    const rawUnit = columns.unit !== -1 ? row[columns.unit] : undefined;
+    const unit = rawUnit !== null && rawUnit !== undefined ? String(rawUnit).trim() : '';
 
-    const quantity = Math.max(1, typeof rawQty === 'number' ? rawQty : parseFloat(String(rawQty).replace(/\s/g, '').replace(',', '.')) || 1);
-    const unitPrice = Math.max(0, typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice).replace(/\s/g, '').replace(',', '.')) || 0);
-    const total = quantity * unitPrice;
+    const parsedQty = columns.qty !== -1 ? parseLocaleNumber(row[columns.qty]) : NaN;
+    const parsedPrice = columns.price !== -1 ? parseLocaleNumber(row[columns.price]) : NaN;
+
+    // Fractional quantities (0.5 kg) are valid; only missing / non-positive values default to 1
+    const quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+    const unitPrice = Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : 0;
 
     items.push({
-      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      id: newItemId(),
       name,
-      unit: rawUnit || 'даана',
+      unit: unit || 'даана',
       quantity,
       unitPrice,
-      total
+      total: Math.round(quantity * unitPrice * 100) / 100
     });
   }
 

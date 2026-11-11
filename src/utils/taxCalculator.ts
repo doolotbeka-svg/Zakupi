@@ -226,7 +226,7 @@ export function calculateTaxes(
 
   // 2. Custom Rate (Өзүңүз киргизиңиз / Ввести ставку вручную)
   if (taxRegime === 'custom') {
-    const rateFraction = Math.max(0, (customTaxRate || 0)) / 100;
+    const rateFraction = Math.min(100, Math.max(0, customTaxRate || 0)) / 100;
     let customTax = 0;
 
     if (customTaxBase === 'profit') {
@@ -268,15 +268,16 @@ export function calculateTaxes(
   // Net VAT payable to state budget = max(0, vatOutput - vatInput)
   const vatPayable = Math.max(0, vatOutput - vatInput);
 
-  // Sales tax (Сатуудан салык / НсП) = 1% of total contract revenue (for non-cash general regime)
-  const salesTax = finalContractPrice * 0.01;
+  // Sales tax (Сатуудан салык / НсП) = 1% of revenue net of VAT
+  // (the sales tax base in the KR Tax Code excludes VAT and the sales tax itself)
+  const revenueWithoutVat = finalContractPrice - vatOutput;
+  const salesTax = revenueWithoutVat * 0.01;
 
   // Other non-goods deductible expenses (logistics, guarantee, other)
   const otherExpensesTotal = Math.max(0, totalExpenses - directGoodsCost);
 
   // Taxable profit for 10% income tax:
   // Revenue net of output VAT - Deductible goods cost (net of input VAT if credited) - Other expenses - Sales tax
-  const revenueWithoutVat = finalContractPrice - vatOutput;
   const taxableProfit = Math.max(
     0,
     revenueWithoutVat - deductibleGoodsCost - otherExpensesTotal - salesTax
@@ -307,10 +308,11 @@ export function calculateGuaranteeCost(
   guaranteeType: 'percent' | 'fixed',
   guaranteeValue: number
 ): number {
-  if (guaranteeValue <= 0 || plannedPrice <= 0) return 0;
+  if (!(guaranteeValue > 0)) return 0;
   if (guaranteeType === 'percent') {
-    return (plannedPrice * guaranteeValue) / 100;
+    return plannedPrice > 0 ? (plannedPrice * guaranteeValue) / 100 : 0;
   }
+  // A fixed guarantee fee does not depend on the planned price
   return guaranteeValue;
 }
 
@@ -374,7 +376,11 @@ export function calculateTender(
 }
 
 /**
- * Binary search solver for exact break-even discount % and contract price.
+ * Binary search solver for the exact break-even contract price (net profit = 0)
+ * and the matching discount % from the planned price.
+ *
+ * If the tender is unprofitable even without any discount, the discount is 0 and
+ * the returned price is the (higher than planned) price needed to break even.
  */
 function findBreakEven(params: TenderParams): { discount: number; price: number } {
   const { plannedPrice, logisticsCost, guaranteeType, guaranteeValue, otherExpenses, directGoodsCost } = params;
@@ -387,27 +393,38 @@ function findBreakEven(params: TenderParams): { discount: number; price: number 
     return { discount: 100, price: 0 };
   }
 
-  // Universal high-precision binary search solver
+  const profitAt = (price: number) =>
+    price - totalExpenses - calculateTaxes(price, directGoodsCost, totalExpenses, params).totalTax;
+
+  // Net profit grows monotonically with the contract price, so bracket the root first.
+  let high = plannedPrice;
+  let guard = 0;
+  while (profitAt(high) <= 0 && guard < 40) {
+    high *= 2;
+    guard++;
+  }
+  if (profitAt(high) <= 0) {
+    // No price can cover the costs (e.g. a 100% tax on revenue)
+    return { discount: 0, price: 0 };
+  }
+
   let low = 0;
-  let high = 100;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 60; i++) {
     const mid = (low + high) / 2;
-    const testPrice = plannedPrice * (1 - mid / 100);
-    const taxes = calculateTaxes(testPrice, directGoodsCost, totalExpenses, params);
-    const profit = testPrice - totalExpenses - taxes.totalTax;
-    if (profit > 0) {
-      low = mid;
-    } else {
+    if (profitAt(mid) > 0) {
       high = mid;
+    } else {
+      low = mid;
     }
   }
 
-  const discount = Math.max(0, Math.min(100, (low + high) / 2));
-  const price = plannedPrice * (1 - discount / 100);
+  const price = high;
+  const discount = Math.max(0, Math.min(100, (1 - price / plannedPrice) * 100));
 
   return {
-    discount: Math.round(discount * 100) / 100,
-    price: Math.round(price)
+    // Round the discount down and the price up so the displayed limits never fall into a loss
+    discount: Math.floor(discount * 100 + 1e-6) / 100,
+    price: Math.ceil(price - 1e-6)
   };
 }
 
@@ -423,7 +440,7 @@ export function generateSensitivityMatrix(
 
   // Combine and sort uniquely
   const allDiscounts = Array.from(new Set([...steps, currentDiscount, breakEven.discount]))
-    .filter(d => d >= 0 && d <= 50)
+    .filter(d => Number.isFinite(d) && d >= 0 && d <= 50)
     .sort((a, b) => a - b);
 
   return allDiscounts.map(discount => {
@@ -448,16 +465,35 @@ export function formatCurrency(
   currency: CurrencySymbol = 'KGS',
   decimals = 0
 ): string {
-  if (isNaN(amount) || !isFinite(amount)) return `0 ${currency}`;
-  const parts = Math.abs(amount).toFixed(decimals).split('.');
+  if (!Number.isFinite(amount)) return `0 ${currency}`;
+  const fixed = Math.abs(amount).toFixed(decimals);
+  const parts = fixed.split('.');
   parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  const sign = amount < 0 ? '−' : '';
-  const formattedNumber = parts.join('.');
-  return `${sign}${formattedNumber} ${currency}`;
+  // Never show a minus sign in front of a value that rounds to zero
+  const sign = amount < 0 && Number(fixed) !== 0 ? '−' : '';
+  return `${sign}${parts.join('.')} ${currency}`;
 }
 
 export function formatPercent(value: number, decimals = 1): string {
-  if (isNaN(value) || !isFinite(value)) return '0.0%';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(decimals)}%`;
+  if (!Number.isFinite(value)) return (0).toFixed(decimals) + '%';
+  const fixed = value.toFixed(decimals);
+  if (Number(fixed) === 0) return (0).toFixed(decimals) + '%';
+  return `${value > 0 ? '+' : ''}${fixed}%`;
+}
+
+/**
+ * Formats a discount percentage: one decimal for slider steps, two when needed (e.g. break-even 23.47%).
+ */
+export function formatDiscount(value: number): string {
+  if (!Number.isFinite(value)) return '0.0';
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(Math.round(rounded * 100) / 10) ? rounded.toFixed(1) : rounded.toFixed(2);
+}
+
+/**
+ * Tolerance (in currency units) within which the net profit is treated as break-even.
+ * Covers the rounding of the break-even discount to 0.01%.
+ */
+export function breakEvenTolerance(plannedPrice: number): number {
+  return Math.max(0, plannedPrice) * 0.0001 + 1;
 }

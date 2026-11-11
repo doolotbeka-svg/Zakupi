@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
 import { CalculationResult, CurrencySymbol, Language, TenderParams } from '../types';
 import { translations } from '../i18n/translations';
-import { formatCurrency, formatPercent, generateSensitivityMatrix, TAX_REGIMES } from '../utils/taxCalculator';
+import {
+  breakEvenTolerance,
+  formatCurrency,
+  formatDiscount,
+  formatPercent,
+  generateSensitivityMatrix,
+  TAX_REGIMES
+} from '../utils/taxCalculator';
 import { 
   TrendingDown, 
   TrendingUp, 
@@ -32,6 +39,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
   currency
 }) => {
   const t = translations[lang];
+  const L = (ky: string, ru: string) => (lang === 'ky' ? ky : ru);
   const [showTaxBreakdown, setShowTaxBreakdown] = useState(false);
   const [showMatrix, setShowMatrix] = useState(false);
 
@@ -47,9 +55,11 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
   };
 
   // Determine status
-  const isLoss = result.netProfit < 0;
-  const isBreakEven = Math.abs(result.netProfit) < 100;
-  const isProfitable = result.netProfit > 0;
+  const isBreakEven = Math.abs(result.netProfit) <= breakEvenTolerance(result.plannedPrice);
+  const isLoss = !isBreakEven && result.netProfit < 0;
+  const isProfitable = !isBreakEven && result.netProfit > 0;
+  // The break-even preset is only reachable when it lies inside the slider range
+  const canApplyBreakEven = result.breakEvenDiscount <= 40 && result.breakEvenPrice <= result.plannedPrice;
 
   return (
     <section className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
@@ -73,7 +83,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
         <button
           type="button"
           onClick={() => {
-            if (result.breakEvenDiscount <= 40) {
+            if (canApplyBreakEven) {
               onDiscountChange(result.breakEvenDiscount);
             }
           }}
@@ -120,7 +130,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
               </button>
 
               <div className="px-4 py-1.5 bg-slate-900 text-white font-mono text-lg font-bold rounded shadow-inner min-w-[90px] text-center tabular-nums">
-                {discount.toFixed(1)}%
+                {formatDiscount(discount)}%
               </div>
 
               <button
@@ -187,7 +197,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
             ))}
 
             {/* Break-even button in presets */}
-            {result.breakEvenDiscount <= 40 && (
+            {canApplyBreakEven && (
               <button
                 type="button"
                 onClick={() => onDiscountChange(result.breakEvenDiscount)}
@@ -206,7 +216,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
             <div className="text-xs sm:text-sm">
               <strong className="font-bold">{t.statusLoss}!</strong> {t.statusLossWarning}
               <div className="mt-1 font-mono text-xs text-rose-700">
-                Максималдык төмөндөтүү чеги: <strong>{result.breakEvenDiscount}%</strong> | Мин. баа: <strong>{formatCurrency(result.breakEvenPrice, currency)}</strong>
+                {L('Максималдык төмөндөтүү чеги', 'Максимально допустимое снижение')}: <strong>{result.breakEvenDiscount}%</strong> | {L('Мин. баа', 'Мин. цена')}: <strong>{formatCurrency(result.breakEvenPrice, currency)}</strong>
               </div>
             </div>
           </div>
@@ -229,7 +239,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                 {formatCurrency(result.finalContractPrice, currency)}
               </div>
               <div className="text-[11px] font-mono text-slate-500 mt-0.5">
-                -{discount.toFixed(1)}% ({formatCurrency(result.priceDropSum, currency)})
+                −{formatDiscount(discount)}% ({formatCurrency(result.priceDropSum, currency)})
               </div>
             </div>
           </div>
@@ -249,7 +259,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                 {formatCurrency(result.totalExpenses, currency)}
               </div>
               <div className="text-[11px] font-mono text-slate-500 mt-0.5">
-                Товар: {formatCurrency(result.totalGoodsCost, currency)}
+                {L('Товар', 'Товары')}: {formatCurrency(result.totalGoodsCost, currency)}
               </div>
             </div>
           </div>
@@ -265,7 +275,8 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                   type="button"
                   onClick={() => setShowTaxBreakdown(!showTaxBreakdown)}
                   className="text-slate-400 hover:text-slate-700 cursor-pointer"
-                  title="Салык чечмелениши"
+                  title={L('Салык чечмелениши', 'Расшифровка налогов')}
+                  aria-label={L('Салык чечмелениши', 'Расшифровка налогов')}
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
                 </button>
@@ -283,7 +294,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                 onClick={() => setShowTaxBreakdown(!showTaxBreakdown)}
                 className="text-[11px] text-slate-500 hover:text-slate-900 underline mt-0.5 flex items-center gap-0.5 cursor-pointer"
               >
-                <span>Деталдар</span>
+                <span>{L('Деталдар', 'Подробнее')}</span>
                 {showTaxBreakdown ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               </button>
             </div>
@@ -306,8 +317,10 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                 </span>
                 {isProfitable ? (
                   <TrendingUp className="w-4 h-4 text-emerald-600" />
-                ) : (
+                ) : isLoss ? (
                   <TrendingDown className="w-4 h-4 text-rose-600" />
+                ) : (
+                  <Target className="w-4 h-4 text-amber-600" />
                 )}
               </div>
               <div className={`text-xs mt-0.5 ${
@@ -325,7 +338,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
               <div className={`text-[11px] font-mono mt-0.5 ${
                 isProfitable ? 'text-emerald-600' : isLoss ? 'text-rose-600' : 'text-amber-600'
               }`}>
-                {result.netProfit >= 0 ? `Пайда маржасы` : `Зыяндын көлөмү`}
+                {isLoss ? L('Зыяндын көлөмү', 'Размер убытка') : L('Пайда маржасы', 'Маржа прибыли')}
               </div>
             </div>
           </div>
@@ -347,8 +360,10 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                 </span>
                 {isProfitable ? (
                   <CheckCircle className="w-4 h-4 text-emerald-600" />
-                ) : (
+                ) : isLoss ? (
                   <AlertTriangle className="w-4 h-4 text-rose-600" />
+                ) : (
+                  <Target className="w-4 h-4 text-amber-600" />
                 )}
               </div>
               <div className={`text-xs mt-0.5 ${
@@ -366,7 +381,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
               <div className={`text-[11px] font-mono mt-0.5 ${
                 isProfitable ? 'text-emerald-600' : isLoss ? 'text-rose-600' : 'text-amber-600'
               }`}>
-                ROI чыгымдан: {formatPercent(result.roiPercent)}
+                {L('ROI чыгымдан', 'ROI от расходов')}: {formatPercent(result.roiPercent)}
               </div>
             </div>
           </div>
@@ -376,7 +391,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
         {showTaxBreakdown && (
           <div className="bg-slate-50 border border-slate-200 rounded-md p-4 text-xs font-mono">
             <div className="font-bold font-sans text-slate-800 mb-2 flex items-center justify-between">
-              <span>Кыргызстан салыктарынын деталдуу эсеби:</span>
+              <span>{L('Кыргызстан салыктарынын деталдуу эсеби', 'Детальный расчёт налогов КР')}:</span>
               <span className="text-slate-500 font-mono">{formatCurrency(result.taxes.totalTax, currency)}</span>
             </div>
             
@@ -386,33 +401,33 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                   <div className="p-2.5 bg-white rounded border border-slate-200">
                     <div className="text-slate-500 font-sans">{t.vatOutputLabel}:</div>
                     <div className="text-sm font-bold text-slate-900 mt-1">{formatCurrency(result.taxes.vatOutput, currency)}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 font-sans">12/112 контракттан</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 font-sans">{L('12/112 контракттан', '12/112 от цены контракта')}</div>
                   </div>
                   <div className="p-2.5 bg-white rounded border border-indigo-200 bg-indigo-50/30">
                     <div className="text-indigo-800 font-sans font-semibold">{t.vatInputLabel}:</div>
                     <div className="text-sm font-bold text-indigo-900 mt-1">
-                      {result.taxes.inputVatOffsetApplied ? `-${formatCurrency(result.taxes.vatInput, currency)}` : `${formatCurrency(0, currency)} (${lang === 'ky' ? 'зачет жок' : 'без зачета'})`}
+                      {result.taxes.inputVatOffsetApplied ? `−${formatCurrency(result.taxes.vatInput, currency)}` : `${formatCurrency(0, currency)} (${L('зачет жок', 'без зачета')})`}
                     </div>
                     <div className="text-[10px] text-indigo-700/80 mt-0.5 font-sans">
-                      {result.taxes.inputVatOffsetApplied ? 'Закуп товардын КНСи' : 'Галочка коюлган эмес'}
+                      {result.taxes.inputVatOffsetApplied ? L('Закуп товардын КНСи', 'НДС в закупке товаров') : L('Белги коюлган эмес', 'Галочка не установлена')}
                     </div>
                   </div>
                   <div className="p-2.5 bg-white rounded border border-slate-200">
                     <div className="text-slate-500 font-sans">{t.vatPayableLabel}:</div>
                     <div className="text-sm font-bold text-slate-900 mt-1">{formatCurrency(result.taxes.vat, currency)}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 font-sans">Сатуу КНС - Зачет</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 font-sans">{L('Сатуу КНС − Зачет', 'Исходящий НДС − Зачет')}</div>
                   </div>
                   <div className="p-2.5 bg-white rounded border border-slate-200">
                     <div className="text-slate-500 font-sans">{t.ledgerSalesTax}:</div>
                     <div className="text-sm font-bold text-slate-900 mt-1">{formatCurrency(result.taxes.salesTax, currency)}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 font-sans">1% выручкадан</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 font-sans">{L('1% КНСсиз түшкөн акчадан', '1% от выручки без НДС')}</div>
                   </div>
                 </div>
 
                 <div className="p-2.5 bg-white rounded border border-slate-200 flex flex-wrap items-center justify-between text-slate-700">
                   <div>
                     <span className="font-sans font-bold text-slate-900">{t.ledgerProfitTax}: </span>
-                    <span className="text-[11px] text-slate-500 font-sans">10% таза салык салынуучу пайдадан</span>
+                    <span className="text-[11px] text-slate-500 font-sans">{L('10% салык салынуучу пайдадан', '10% от налогооблагаемой прибыли')}</span>
                   </div>
                   <div className="text-sm font-bold text-slate-900 font-mono">
                     {formatCurrency(result.taxes.profitTax, currency)}
@@ -422,13 +437,13 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
             ) : result.taxes.regimeId === 'custom' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-700">
                 <div className="p-2.5 bg-white rounded border border-emerald-200 bg-emerald-50/20">
-                  <div className="text-slate-600 font-sans font-semibold">Өз алдынча киргизилген ченем:</div>
+                  <div className="text-slate-600 font-sans font-semibold">{L('Өз алдынча киргизилген ченем', 'Введённая вручную ставка')}:</div>
                   <div className="text-base font-bold text-emerald-800 mt-1 font-mono">
-                    {params.customTaxRate || 0}% ({params.customTaxBase === 'profit' ? 'пайдадан' : 'выручкадан'})
+                    {params.customTaxRate || 0}% ({params.customTaxBase === 'profit' ? L('пайдадан', 'от прибыли') : L('түшкөн акчадан', 'от выручки')})
                   </div>
                 </div>
                 <div className="p-2.5 bg-white rounded border border-emerald-200 bg-emerald-50/20">
-                  <div className="text-slate-600 font-sans font-semibold">Төлөнүүчү салык суммасы:</div>
+                  <div className="text-slate-600 font-sans font-semibold">{L('Төлөнүүчү салык суммасы', 'Сумма налога к уплате')}:</div>
                   <div className="text-base font-bold text-slate-900 mt-1 font-mono">
                     {formatCurrency(result.taxes.totalTax, currency)}
                   </div>
@@ -437,14 +452,14 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-700">
                 <div className="p-2.5 bg-white rounded border border-slate-200">
-                  <div className="text-slate-500 font-sans">Бирдиктүү салык ченеми:</div>
+                  <div className="text-slate-500 font-sans">{L('Бирдиктүү салык ченеми', 'Ставка единого налога')}:</div>
                   <div className="text-sm font-bold text-slate-900 mt-1">
                     {TAX_REGIMES[params.taxRegime]?.rateLabel || '0%'}
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5 font-sans">Келишимдин акыркы баасынан</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 font-sans">{L('Келишимдин акыркы баасынан', 'От итоговой цены контракта')}</div>
                 </div>
                 <div className="p-2.5 bg-white rounded border border-slate-200">
-                  <div className="text-slate-500 font-sans">Салыктын жалпы суммасы:</div>
+                  <div className="text-slate-500 font-sans">{L('Салыктын жалпы суммасы', 'Общая сумма налога')}:</div>
                   <div className="text-sm font-bold text-slate-900 mt-1 font-mono">
                     {formatCurrency(result.taxes.totalTax, currency)}
                   </div>
@@ -483,13 +498,13 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                   <th className="px-3.5 py-2.5 text-right">{t.colProfit}</th>
                   <th className="px-3.5 py-2.5 text-right">{t.colMargin}</th>
                   <th className="px-3.5 py-2.5 text-center">{t.colStatus}</th>
-                  <th className="px-3.5 py-2.5 text-center">Аракет</th>
+                  <th className="px-3.5 py-2.5 text-center">{L('Аракет', 'Действие')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 font-mono tabular-nums">
-                {sensitivityMatrix.map((step, idx) => (
+                {sensitivityMatrix.map((step) => (
                   <tr
-                    key={idx}
+                    key={step.discount}
                     className={`transition-colors ${
                       step.isCurrent
                         ? 'bg-slate-900 text-white font-bold'
@@ -499,7 +514,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                     }`}
                   >
                     <td className="px-3.5 py-2 text-center font-bold">
-                      {step.discount.toFixed(1)}%
+                      {formatDiscount(step.discount)}%
                     </td>
                     <td className="px-3.5 py-2 text-right">
                       {formatCurrency(step.finalPrice, currency)}
@@ -520,11 +535,11 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                     <td className="px-3.5 py-2 text-center font-sans text-[11px]">
                       {step.isProfitable ? (
                         <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${step.isCurrent ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-emerald-700 bg-emerald-100'}`}>
-                          Пайдалуу
+                          {L('Пайдалуу', 'Прибыльно')}
                         </span>
                       ) : (
                         <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${step.isCurrent ? 'bg-rose-400 text-slate-950 font-bold' : 'text-rose-700 bg-rose-100'}`}>
-                          Чыгым
+                          {L('Чыгым', 'Убыток')}
                         </span>
                       )}
                     </td>
@@ -538,7 +553,7 @@ export const BiddingSimulator: React.FC<BiddingSimulatorProps> = ({
                             : 'bg-slate-200 hover:bg-slate-300 text-slate-800'
                         }`}
                       >
-                        Тандоо
+                        {L('Тандоо', 'Выбрать')}
                       </button>
                     </td>
                   </tr>
