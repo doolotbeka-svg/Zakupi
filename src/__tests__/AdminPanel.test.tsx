@@ -20,7 +20,10 @@ const buyerPays = async (planId = '3m', reported = true) => {
   return payment;
 };
 
-const openPanel = async (email = 'admin@example.com') => {
+const ADMIN_PASSWORD = 'test-pass-1';
+
+/** Signs in on the panel page; for the administrator also enters the panel password (set up beforehand). */
+const openPanel = async (email = 'admin@example.com', { unlock = true } = {}) => {
   window.history.replaceState(null, '', '/#admin');
   const user = userEvent.setup();
   render(
@@ -35,6 +38,11 @@ const openPanel = async (email = 'admin@example.com') => {
   await user.type(await within(dialog).findByLabelText('Код из письма'), VALID_CODE);
   await user.click(within(dialog).getByRole('button', { name: 'Войти' }));
   await user.keyboard('{Escape}');
+  if (unlock && backend.admins.has(email)) {
+    await user.type(await screen.findByLabelText('Пароль'), ADMIN_PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Открыть панель' }));
+    await screen.findByRole('navigation', { name: 'Разделы админ-панели' });
+  }
   return user;
 };
 
@@ -47,10 +55,12 @@ beforeEach(() => {
   backend = new FakeAccountBackend();
   backend.admins.add('admin@example.com');
   backend.access = { paywallEnabled: true, loginRequired: true, paidUntil: null, plan: null };
+  backend.adminPassword = ADMIN_PASSWORD;
 });
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.restoreAllMocks();
   window.history.replaceState(null, '', '/');
 });
@@ -205,5 +215,80 @@ describe('админ-панель: тарифы и настройки', () => {
     const login = screen.getByText('Вход обязателен').closest('div.rounded-lg')!;
     await user.click(within(login as HTMLElement).getByRole('button', { name: 'Выключить' }));
     await waitFor(() => expect(backend.access.loginRequired).toBe(false));
+  });
+});
+
+describe('админ-панель: пароль', () => {
+  it('при первом входе просит придумать пароль и открывает панель', async () => {
+    backend.adminPassword = null;
+    const user = await openPanel('admin@example.com', { unlock: false });
+
+    expect(await screen.findByRole('heading', { name: 'Придумайте пароль админ-панели' })).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Разделы админ-панели' })).toBeNull();
+    await user.type(screen.getByLabelText('Пароль'), 'first-pass-7');
+    await user.type(screen.getByLabelText('Повтор пароля'), 'first-pass-8');
+    await user.click(screen.getByRole('button', { name: 'Сохранить пароль' }));
+    expect(screen.getByRole('alert').textContent).toMatch(/не совпадают/);
+
+    await user.clear(screen.getByLabelText('Повтор пароля'));
+    await user.type(screen.getByLabelText('Повтор пароля'), 'first-pass-7');
+    await user.click(screen.getByRole('button', { name: 'Сохранить пароль' }));
+    expect(await screen.findByRole('navigation', { name: 'Разделы админ-панели' })).toBeTruthy();
+    expect(backend.adminPassword).toBe('first-pass-7');
+  });
+
+  it('неверный пароль не открывает панель, после 5 попыток — блокировка', async () => {
+    const user = await openPanel('admin@example.com', { unlock: false });
+    for (let i = 0; i < 4; i++) {
+      await user.type(await screen.findByLabelText('Пароль'), 'wrong');
+      await user.click(screen.getByRole('button', { name: 'Открыть панель' }));
+      expect((await screen.findByRole('alert')).textContent).toBe('Неверный пароль.');
+    }
+    await user.type(screen.getByLabelText('Пароль'), 'wrong');
+    await user.click(screen.getByRole('button', { name: 'Открыть панель' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Подождите 15 минут/);
+
+    await user.type(screen.getByLabelText('Пароль'), ADMIN_PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Открыть панель' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Подождите 15 минут/);
+    expect(screen.queryByRole('navigation', { name: 'Разделы админ-панели' })).toBeNull();
+  });
+
+  it('когда сессия истекает, снова просит пароль', async () => {
+    await buyerPays();
+    const user = await openPanel();
+    backend.adminSessions.clear(); // the session key expired on the server
+
+    await user.click(tab(/Пользователи/));
+    expect(await screen.findByText('Сессия истекла — введите пароль снова.')).toBeTruthy();
+    await user.type(screen.getByLabelText('Пароль'), ADMIN_PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Открыть панель' }));
+    expect(await screen.findByRole('navigation', { name: 'Разделы админ-панели' })).toBeTruthy();
+  });
+
+  it('кнопка с замком закрывает панель до ввода пароля', async () => {
+    const user = await openPanel();
+    await user.click(screen.getByRole('button', { name: 'Заблокировать панель' }));
+    expect(await screen.findByRole('heading', { name: 'Пароль админ-панели' })).toBeTruthy();
+  });
+
+  it('пароль можно сменить в настройках', async () => {
+    const user = await openPanel();
+    await user.click(tab(/Настройки/));
+    await user.type(screen.getByLabelText('Текущий пароль'), 'nope');
+    await user.type(screen.getByLabelText('Новый пароль'), 'new-pass-22');
+    await user.type(screen.getByLabelText('Повтор нового пароля'), 'new-pass-22');
+    await user.click(screen.getByRole('button', { name: 'Сменить пароль' }));
+    expect(await screen.findByText(/Текущий пароль неверный/)).toBeTruthy();
+
+    await user.clear(screen.getByLabelText('Текущий пароль'));
+    await user.type(screen.getByLabelText('Текущий пароль'), ADMIN_PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Сменить пароль' }));
+    expect(await screen.findByText(/Пароль изменён/)).toBeTruthy();
+    expect(backend.adminPassword).toBe('new-pass-22');
+
+    // The panel keeps working with the new session key
+    await user.click(tab(/Тарифы/));
+    expect(await screen.findByLabelText('Цена: 1 месяц')).toBeTruthy();
   });
 });

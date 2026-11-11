@@ -222,16 +222,37 @@ describe('оплата по QR: преобразование и вызовы', (
     await backend.reportPayment('p1', 'Азамат');
     await backend.cancelPayment('p1');
     expect(await backend.isAdmin()).toBe(true);
-    expect(await backend.approvePayment('p1')).toBe('2027-02-11T00:00:00Z');
-    await backend.rejectPayment('p1');
+    expect(await backend.approvePayment('key', 'p1')).toBe('2027-02-11T00:00:00Z');
+    await backend.rejectPayment('key', 'p1');
 
     expect(rpc.mock.calls).toEqual([
       ['request_payment', { p_plan: '3m' }],
       ['report_payment_sent', { p_id: 'p1', p_note: 'Азамат' }],
       ['cancel_payment_request', { p_id: 'p1' }],
       ['is_admin'],
-      ['approve_payment_request', { p_id: 'p1' }],
-      ['reject_payment_request', { p_id: 'p1' }]
+      ['approve_payment_request', { p_token: 'key', p_id: 'p1' }],
+      ['reject_payment_request', { p_token: 'key', p_id: 'p1' }]
+    ]);
+  });
+
+  it('пароль админ-панели: вход, установка, истёкшая сессия', async () => {
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'admin_unlock') return { data: [{ session_token: 'abc', locked: false }], error: null };
+      if (name === 'admin_set_password') return { data: null, error: null };
+      if (name === 'admin_list_plans') return { data: null, error: { code: '28000', message: 'admin session expired' } };
+      return { data: true, error: null };
+    });
+    const client = { auth: {}, from: () => fakeQuery({ data: [], error: null }, []), rpc } as unknown as SupabaseClient;
+    const backend = createSupabaseBackend('u', 'k', client);
+
+    expect(await backend.adminPasswordIsSet()).toBe(true);
+    expect(await backend.adminUnlock('first-pass-7')).toEqual({ token: 'abc', locked: false });
+    expect(await backend.adminSetPassword('new-pass', 'old-pass')).toBeNull();
+    await expect(backend.adminListPlans('old')).rejects.toMatchObject({ kind: 'admin_session' });
+    expect(rpc.mock.calls.slice(0, 3)).toEqual([
+      ['admin_password_is_set'],
+      ['admin_unlock', { p_password: 'first-pass-7' }],
+      ['admin_set_password', { p_new: 'new-pass', p_current: 'old-pass' }]
     ]);
   });
 

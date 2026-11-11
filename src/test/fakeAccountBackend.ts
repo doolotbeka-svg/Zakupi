@@ -140,16 +140,74 @@ export class FakeAccountBackend implements AccountBackend {
     return this.user !== null && this.admins.has(this.user.email.toLowerCase());
   }
 
-  async listOpenPayments() {
-    if (!(await this.isAdmin())) return [];
-    return this.payments
-      .filter(p => p.status === 'pending')
-      .sort((a, b) => Number(b.reportedAt !== null) - Number(a.reportedAt !== null))
-      .map(p => this.strip(p));
+  // ---- admin panel password and sessions (same rules as the database) ----
+  adminPassword: string | null = null;
+  adminSessions = new Set<string>();
+  adminFailures: number[] = [];
+  private nextToken = 1;
+
+  private locked() {
+    const since = Date.now() - 15 * 60 * 1000;
+    return this.adminFailures.filter(t => t > since).length >= 5;
   }
 
-  async approvePayment(id: string) {
+  private newSession() {
+    const token = `session-${this.nextToken++}`;
+    this.adminSessions.add(token);
+    return token;
+  }
+
+  private async requireSession(token: string) {
     if (!(await this.isAdmin())) throw new AccountError('forbidden');
+    if (!this.adminSessions.has(token)) throw new AccountError('admin_session');
+  }
+
+  async adminPasswordIsSet() {
+    if (!(await this.isAdmin())) throw new AccountError('forbidden');
+    return this.adminPassword !== null;
+  }
+
+  async adminUnlock(password: string) {
+    if (!(await this.isAdmin())) throw new AccountError('forbidden');
+    if (this.adminPassword === null) throw new AccountError('unknown');
+    if (this.locked()) return { token: null, locked: true };
+    if (password !== this.adminPassword) {
+      this.adminFailures.push(Date.now());
+      return { token: null, locked: this.locked() };
+    }
+    this.adminFailures = [];
+    return { token: this.newSession(), locked: false };
+  }
+
+  async adminSetPassword(newPassword: string, currentPassword: string | null) {
+    if (!(await this.isAdmin())) throw new AccountError('forbidden');
+    if (newPassword.length < 6) throw new AccountError('unknown');
+    if (this.adminPassword !== null) {
+      if (this.locked()) return null;
+      if (currentPassword !== this.adminPassword) {
+        this.adminFailures.push(Date.now());
+        return null;
+      }
+    }
+    this.adminPassword = newPassword;
+    this.adminSessions.clear();
+    this.adminFailures = [];
+    return this.newSession();
+  }
+
+  async listAdminPayments(token: string, openOnly: boolean) {
+    await this.requireSession(token);
+    if (openOnly) {
+      return this.payments
+        .filter(p => p.status === 'pending')
+        .sort((a, b) => Number(b.reportedAt !== null) - Number(a.reportedAt !== null))
+        .map(p => this.strip(p));
+    }
+    return [...this.payments].reverse().map(p => this.strip(p));
+  }
+
+  async approvePayment(token: string, id: string) {
+    await this.requireSession(token);
     const payment = this.payments.find(p => p.id === id && p.status === 'pending');
     if (!payment) throw new AccountError('unknown');
     payment.status = 'approved';
@@ -160,8 +218,8 @@ export class FakeAccountBackend implements AccountBackend {
     return from.toISOString();
   }
 
-  async rejectPayment(id: string) {
-    if (!(await this.isAdmin())) throw new AccountError('forbidden');
+  async rejectPayment(token: string, id: string) {
+    await this.requireSession(token);
     const payment = this.payments.find(p => p.id === id && p.status === 'pending');
     if (!payment) throw new AccountError('unknown');
     payment.status = 'rejected';
@@ -170,17 +228,8 @@ export class FakeAccountBackend implements AccountBackend {
   /** Subscriptions granted by approvals, per user */
   paidUntilByUser = new Map<string, string>();
 
-  private async requireAdmin() {
-    if (!(await this.isAdmin())) throw new AccountError('forbidden');
-  }
-
-  async listRecentPayments() {
-    await this.requireAdmin();
-    return [...this.payments].reverse().map(p => this.strip(p));
-  }
-
-  async updateSettings(changes: { paywallEnabled?: boolean; loginRequired?: boolean }) {
-    await this.requireAdmin();
+  async updateSettings(token: string, changes: { paywallEnabled?: boolean; loginRequired?: boolean }) {
+    await this.requireSession(token);
     this.access = {
       ...this.access,
       paywallEnabled: changes.paywallEnabled ?? this.access.paywallEnabled,
@@ -188,13 +237,13 @@ export class FakeAccountBackend implements AccountBackend {
     };
   }
 
-  async adminListPlans(): Promise<AdminPlan[]> {
-    await this.requireAdmin();
+  async adminListPlans(token: string): Promise<AdminPlan[]> {
+    await this.requireSession(token);
     return this.plans.map(p => ({ id: p.id, months: p.months, priceKgs: p.priceKgs ?? 0, active: !this.hiddenPlans.has(p.id) }));
   }
 
-  async updatePlan(id: string, priceKgs: number, active: boolean) {
-    await this.requireAdmin();
+  async updatePlan(token: string, id: string, priceKgs: number, active: boolean) {
+    await this.requireSession(token);
     const plan = this.plans.find(p => p.id === id);
     if (!plan || !(priceKgs > 0)) throw new AccountError('unknown');
     plan.priceKgs = priceKgs;
@@ -202,8 +251,8 @@ export class FakeAccountBackend implements AccountBackend {
     else this.hiddenPlans.add(id);
   }
 
-  async listUsers(search: string): Promise<AdminUser[]> {
-    await this.requireAdmin();
+  async listUsers(token: string, search: string): Promise<AdminUser[]> {
+    await this.requireSession(token);
     const q = search.trim().toLowerCase();
     return [...this.registry.entries()]
       .filter(([, u]) => !q || u.email.toLowerCase().includes(q))
@@ -219,8 +268,8 @@ export class FakeAccountBackend implements AccountBackend {
       }));
   }
 
-  async extendSubscription(userId: string, months: number) {
-    await this.requireAdmin();
+  async extendSubscription(token: string, userId: string, months: number) {
+    await this.requireSession(token);
     const current = this.paidUntilByUser.get(userId);
     const from = current && Date.parse(current) > Date.now() ? new Date(current) : new Date();
     from.setMonth(from.getMonth() + months);
@@ -228,8 +277,8 @@ export class FakeAccountBackend implements AccountBackend {
     return from.toISOString();
   }
 
-  async setSubscription(userId: string, paidUntil: string | null) {
-    await this.requireAdmin();
+  async setSubscription(token: string, userId: string, paidUntil: string | null) {
+    await this.requireSession(token);
     if (paidUntil) this.paidUntilByUser.set(userId, paidUntil);
     else this.paidUntilByUser.delete(userId);
   }

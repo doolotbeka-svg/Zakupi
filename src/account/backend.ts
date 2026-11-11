@@ -51,6 +51,8 @@ export type AccountErrorKind =
   /** Login is switched off or emails cannot be sent to this address yet (no own mail service) */
   | 'unavailable'
   | 'forbidden'
+  /** The admin panel session key is missing or expired: ask for the password again */
+  | 'admin_session'
   | 'network'
   | 'unknown';
 
@@ -88,22 +90,26 @@ export interface AccountBackend {
   cancelPayment(id: string): Promise<void>;
 
   isAdmin(): Promise<boolean>;
-  /** Administrator: open payment requests of all users, reported ones first */
-  listOpenPayments(): Promise<PaymentRequest[]>;
-  /** Administrator: the money arrived — extends the subscription; returns the new end date */
-  approvePayment(id: string): Promise<string>;
-  rejectPayment(id: string): Promise<void>;
-  /** Administrator: recent payment requests of every status, newest first */
-  listRecentPayments(): Promise<PaymentRequest[]>;
 
-  /** Administrator: site switches; undefined keeps the current value */
-  updateSettings(changes: { paywallEnabled?: boolean; loginRequired?: boolean }): Promise<void>;
-  adminListPlans(): Promise<AdminPlan[]>;
-  updatePlan(id: string, priceKgs: number, active: boolean): Promise<void>;
-  /** Administrator: users with subscriptions, newest first; optional search by email */
-  listUsers(search: string): Promise<AdminUser[]>;
-  /** Administrator: adds months from the current end (or today); returns the new end date */
-  extendSubscription(userId: string, months: number): Promise<string>;
-  /** Administrator: exact end date; null removes the subscription */
-  setSubscription(userId: string, paidUntil: string | null): Promise<void>;
+  // Administrator panel. Every call below needs the session key from the panel password.
+  adminPasswordIsSet(): Promise<boolean>;
+  /** Checks the panel password: a session key, or none (locked = too many wrong attempts) */
+  adminUnlock(password: string): Promise<{ token: string | null; locked: boolean }>;
+  /** Sets (first time) or changes the panel password; a new session key, or null if the current one is wrong */
+  adminSetPassword(newPassword: string, currentPassword: string | null): Promise<string | null>;
+  /** Open requests (reported ones first) or the recent history of every status */
+  listAdminPayments(token: string, openOnly: boolean): Promise<PaymentRequest[]>;
+  /** The money arrived — extends the subscription; returns the new end date */
+  approvePayment(token: string, id: string): Promise<string>;
+  rejectPayment(token: string, id: string): Promise<void>;
+  /** Site switches; undefined keeps the current value */
+  updateSettings(token: string, changes: { paywallEnabled?: boolean; loginRequired?: boolean }): Promise<void>;
+  adminListPlans(token: string): Promise<AdminPlan[]>;
+  updatePlan(token: string, id: string, priceKgs: number, active: boolean): Promise<void>;
+  /** Users with subscriptions, newest first; optional search by email */
+  listUsers(token: string, search: string): Promise<AdminUser[]>;
+  /** Adds months from the current end (or today); returns the new end date */
+  extendSubscription(token: string, userId: string, months: number): Promise<string>;
+  /** Exact end date; null removes the subscription */
+  setSubscription(token: string, userId: string, paidUntil: string | null): Promise<void>;
 }

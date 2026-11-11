@@ -31,6 +31,7 @@ import { TemplatesModal } from './components/TemplatesModal';
 import { PrintModal } from './components/PrintModal';
 import { SavedTendersModal } from './components/SavedTendersModal';
 import { AccountModal } from './components/AccountModal';
+import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { useAccount } from './account/AccountContext';
 
 const STORAGE_KEY_PARAMS = 'kg_tender_calc_params_v1';
@@ -465,6 +466,8 @@ export default function App() {
             : undefined
         }
       />
+
+      <SubscriptionBanner lang={lang} />
 
       {/* RUB is a display currency: show the rate it is converted with */}
       {currency === 'RUB' && (
