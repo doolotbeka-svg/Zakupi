@@ -104,7 +104,7 @@ update public.app_settings set paywall_enabled = false;
 Если пароль забыт, сбросьте его в *SQL Editor* — при следующем входе панель предложит задать новый:
 
 ```sql
-delete from public.admin_secrets;
+delete from public.admin_secrets where true;
 ```
 
 ## Напоминания об окончании подписки
