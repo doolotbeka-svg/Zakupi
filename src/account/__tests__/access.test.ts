@@ -22,11 +22,15 @@ describe('subscriptionStatus / daysLeft', () => {
     expect(subscriptionStatus('не дата', now)).toBe('none');
   });
 
-  it('считает оставшиеся дни с округлением вверх', () => {
+  it('считает оставшиеся дни по календарю Бишкека', () => {
     expect(daysLeft('2026-12-11T12:00:00Z', now)).toBe(30);
     expect(daysLeft('2026-11-11T13:00:00Z', now)).toBe(1);
     expect(daysLeft('2026-11-10T12:00:00Z', now)).toBe(0);
     expect(daysLeft(null, now)).toBe(0);
+    // now = 18:00 11.11 в Бишкеке; подписка до 23:00 13.11 — 2 календарных дня, а не 3
+    expect(daysLeft('2026-11-13T17:00:00Z', now)).toBe(2);
+    // заканчивается в 01:00 12.11 по Бишкеку — завтра, 1 день
+    expect(daysLeft('2026-11-11T19:00:00Z', now)).toBe(1);
   });
 });
 

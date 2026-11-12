@@ -7,15 +7,18 @@ import { describe, expect, it } from 'vitest';
  * imports ("./x.js"). The test bundler adds them silently, so check the source directly.
  */
 const apiDir = join(__dirname, '../../../api');
+/** Code the functions import from src/ runs the same way */
+const serverDir = join(__dirname, '..');
 const files = (dir: string): string[] =>
   readdirSync(dir).flatMap(name => {
     const path = join(dir, name);
+    if (name === '__tests__') return [];
     return statSync(path).isDirectory() ? files(path) : /\.ts$/.test(name) ? [path] : [];
   });
 
 describe('серверные функции Vercel', () => {
-  it('относительные импорты в api/ указаны с расширением .js', () => {
-    const offenders = files(apiDir).flatMap(file =>
+  it('относительные импорты в api/ и src/server/ указаны с расширением .js', () => {
+    const offenders = [...files(apiDir), ...files(serverDir)].flatMap(file =>
       [...readFileSync(file, 'utf8').matchAll(/from\s+'(\.{1,2}\/[^']+)'/g)]
         .map(match => match[1])
         .filter(path => !path.endsWith('.js'))

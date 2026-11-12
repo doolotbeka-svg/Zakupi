@@ -3,6 +3,8 @@
  * the dependencies are passed in so the logic can be tested without a database or mail server.
  */
 
+import { calendarDaysLeft } from '../account/days.js';
+
 export interface DueSubscription {
   userId: string;
   email: string;
@@ -41,7 +43,7 @@ const escapeHtml = (text: string) =>
 
 export function buildReminderEmail(sub: DueSubscription, siteUrl: string, now: Date = new Date()): ReminderMail {
   const date = formatDate(sub.paidUntil);
-  const left = Math.max(1, Math.ceil((Date.parse(sub.paidUntil) - now.getTime()) / 86_400_000));
+  const left = Math.max(1, calendarDaysLeft(sub.paidUntil, now));
   const url = siteUrl.replace(/\/+$/, '');
 
   const ru = [
