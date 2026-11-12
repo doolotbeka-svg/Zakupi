@@ -1,4 +1,5 @@
 import { Feature, PREMIUM_FEATURES } from '../config/plans';
+import { calendarDaysLeft } from './days';
 
 export interface AccessInfo {
   /** Paid features are locked for users without an active subscription */
@@ -21,10 +22,10 @@ export function subscriptionStatus(paidUntil: string | null, now: Date = new Dat
   return time > now.getTime() ? 'active' : 'expired';
 }
 
-/** Whole days left, rounded up (a subscription ending later today counts as 1 day). */
+/** Calendar days left in Bishkek time (see calendarDaysLeft); 0 without an active subscription. */
 export function daysLeft(paidUntil: string | null, now: Date = new Date()): number {
   if (subscriptionStatus(paidUntil, now) !== 'active') return 0;
-  return Math.ceil((Date.parse(paidUntil!) - now.getTime()) / 86_400_000);
+  return calendarDaysLeft(paidUntil!, now);
 }
 
 export function isPremiumFeature(feature: Feature): boolean {

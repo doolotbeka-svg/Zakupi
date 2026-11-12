@@ -9,10 +9,20 @@ describe('письмо-напоминание', () => {
     const mail = buildReminderEmail(sub, 'https://zakupi.vercel.app/', now);
     expect(mail.to).toBe('buyer@example.com');
     expect(mail.subject).toBe('Подписка заканчивается 14.11.2026 · Калькулятор тендеров');
-    expect(mail.text).toContain('действует до 14.11.2026 (осталось 3 дн.)');
-    expect(mail.text).toContain('14.11.2026 чейин жарактуу (3 күн калды)');
+    expect(mail.text).toContain('действует до 14.11.2026 (осталось 2 дн.)');
+    expect(mail.text).toContain('14.11.2026 чейин жарактуу (2 күн калды)');
     expect(mail.text).toContain('откройте https://zakupi.vercel.app,');
     expect(mail.html).toContain('href="https://zakupi.vercel.app"');
+  });
+
+  it('дни считает по календарю: 12.11 до 14.11 — 2 дня в любое время суток', () => {
+    const left = (iso: string, at: string) =>
+      buildReminderEmail({ ...sub, paidUntil: iso }, 'https://x', new Date(at)).text.match(/осталось (\d+) дн\./)![1];
+    // 00:30 и 23:30 12.11 по Бишкеку, подписка до вечера 14.11
+    expect(left('2026-11-14T17:59:00Z', '2026-11-11T18:30:00Z')).toBe('2');
+    expect(left('2026-11-14T17:59:00Z', '2026-11-12T17:30:00Z')).toBe('2');
+    // последний день подписки — 1, а не 0
+    expect(left('2026-11-12T17:00:00Z', '2026-11-12T03:00:00Z')).toBe('1');
   });
 
   it('дату показывает по времени Бишкека', () => {
