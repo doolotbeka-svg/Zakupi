@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAccount } from '../account/AccountContext';
 import { AccountError, AdminPlan, AdminUser, PaymentRequest } from '../account/backend';
-import { subscriptionStatus } from '../account/access';
+import { isTrial, subscriptionStatus } from '../account/access';
 import { AccountModal } from './AccountModal';
 import { monthsLabel } from './PaymentSection';
 import { AlertCircle, ArrowLeft, Check, CreditCard, KeyRound, Lock, LogIn, LogOut, RefreshCw, Search, Settings, ShieldCheck, Tags, Users, X } from 'lucide-react';
@@ -284,9 +284,9 @@ const UsersTab: React.FC<TabProps> = ({ token, onExpired }) => {
                   }
                 >
                   {status === 'active'
-                    ? `Подписка до ${date(user.paidUntil)}`
+                    ? `${isTrial(user.plan) ? 'Бесплатный месяц' : 'Подписка'} до ${date(user.paidUntil)}`
                     : status === 'expired'
-                      ? `Подписка закончилась ${date(user.paidUntil)}`
+                      ? `${isTrial(user.plan) ? 'Бесплатный месяц закончился' : 'Подписка закончилась'} ${date(user.paidUntil)}`
                       : 'Подписки нет'}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -469,7 +469,7 @@ const SettingsTab: React.FC<TabProps & { onNewSession: (token: string) => void }
   const [busy, setBusy] = useState(false);
   if (!backend) return null;
 
-  const toggle = async (key: 'paywallEnabled' | 'loginRequired', next: boolean, question: string) => {
+  const toggle = async (key: 'paywallEnabled' | 'loginRequired' | 'trialEnabled', next: boolean, question: string) => {
     if (!window.confirm(question)) return;
     setBusy(true);
     setMessage(null);
@@ -518,6 +518,16 @@ const SettingsTab: React.FC<TabProps & { onNewSession: (token: string) => void }
       on: access.paywallEnabled,
       text: 'Сохранённые расчёты, Excel, печать и ссылка на расчёт доступны только с подпиской. Выключено — всё бесплатно.',
       ask: (next: boolean) => (next ? 'Включить платный доступ? Без подписки платные функции закроются.' : 'Выключить платный доступ? Все функции станут бесплатными.')
+    },
+    {
+      key: 'trialEnabled' as const,
+      title: 'Первый месяц бесплатно',
+      on: access.trialEnabled,
+      text: 'Каждый новый аккаунт один раз получает месяц полного доступа, дальше — по тарифам. Работает при включённом платном доступе.',
+      ask: (next: boolean) =>
+        next
+          ? 'Включить бесплатный первый месяц для новых аккаунтов?'
+          : 'Выключить бесплатный месяц? Уже начатые пробные месяцы продолжатся до своей даты.'
     },
     {
       key: 'loginRequired' as const,

@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { SavedTender } from '../types';
 import { MAX_SAVED_TENDERS, sanitizeSavedTenders } from '../utils/storage';
-import { AccessInfo, normalizeCode } from './access';
+import { AccessInfo, TRIAL_PLAN, normalizeCode } from './access';
 import { AccountBackend, AccountError, AccountUser, AdminPlan, AdminUser, PaymentRequest, PaymentStatus } from './backend';
 import { PLANS, Plan } from '../config/plans';
 
@@ -173,16 +173,15 @@ export function createSupabaseBackend(url: string, key: string, client?: Supabas
     },
 
     async getAccess(user): Promise<AccessInfo> {
-      let settings = await supabase.from('app_settings').select('paywall_enabled, login_required').maybeSingle();
-      // 42703: the login_required column is not created yet (older database schema) — treat it as off
-      if (settings.error?.code === '42703') {
-        settings = await supabase.from('app_settings').select('paywall_enabled').maybeSingle();
-      }
+      // Every column, so switches added by later migrations are simply missing (= off) in an older database
+      const settings = await supabase.from('app_settings').select('*').maybeSingle();
       if (settings.error) throw describeDbError(settings.error);
-      const row = (settings.data ?? {}) as { paywall_enabled?: unknown; login_required?: unknown };
+      const row = (settings.data ?? {}) as { paywall_enabled?: unknown; login_required?: unknown; trial_enabled?: unknown };
       const paywallEnabled = row.paywall_enabled === true;
       const loginRequired = row.login_required === true;
-      if (!user) return { paywallEnabled, loginRequired, paidUntil: null, plan: null };
+      const trialEnabled = row.trial_enabled === true;
+      const base = { paywallEnabled, loginRequired, trialEnabled };
+      if (!user) return { ...base, paidUntil: null, plan: null };
 
       const subscription = await supabase
         .from('subscriptions')
@@ -190,12 +189,22 @@ export function createSupabaseBackend(url: string, key: string, client?: Supabas
         .eq('user_id', user.id)
         .maybeSingle();
       if (subscription.error) throw describeDbError(subscription.error);
-      return {
-        paywallEnabled,
-        loginRequired,
-        paidUntil: typeof subscription.data?.paid_until === 'string' ? subscription.data.paid_until : null,
-        plan: typeof subscription.data?.plan === 'string' ? subscription.data.plan : null
-      };
+      if (subscription.data) {
+        const data = subscription.data as { paid_until?: unknown; plan?: unknown };
+        return {
+          ...base,
+          paidUntil: typeof data.paid_until === 'string' ? data.paid_until : null,
+          plan: typeof data.plan === 'string' ? data.plan : null
+        };
+      }
+
+      // Never had a subscription: the database decides whether the free first month starts now
+      if (paywallEnabled && trialEnabled) {
+        const trial = await supabase.rpc('start_trial');
+        if (trial.error) console.error('Could not start the free month', trial.error);
+        else if (typeof trial.data === 'string') return { ...base, paidUntil: trial.data, plan: TRIAL_PLAN };
+      }
+      return { ...base, paidUntil: null, plan: null };
     },
 
     async listSaved(user) {
@@ -312,7 +321,9 @@ export function createSupabaseBackend(url: string, key: string, client?: Supabas
       const { error } = await supabase.rpc('admin_update_settings', {
         p_token: token,
         p_paywall: changes.paywallEnabled ?? null,
-        p_login_required: changes.loginRequired ?? null
+        p_login_required: changes.loginRequired ?? null,
+        // Sent only when changed, so the call also works before the trial migration is run
+        ...(changes.trialEnabled === undefined ? {} : { p_trial: changes.trialEnabled })
       });
       if (error) throw describeDbError(error);
     },

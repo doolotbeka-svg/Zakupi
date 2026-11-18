@@ -43,10 +43,11 @@ export async function GET(request: Request): Promise<Response> {
         const { data, error } = await supabase.rpc('subscriptions_due_for_reminder', { p_days: days });
         if (error) throw new Error(error.message);
         return (Array.isArray(data) ? data : []).map(
-          (row: { user_id: string; email: string; paid_until: string }): DueSubscription => ({
+          (row: { user_id: string; email: string; paid_until: string; plan?: string | null }): DueSubscription => ({
             userId: row.user_id,
             email: row.email,
-            paidUntil: row.paid_until
+            paidUntil: row.paid_until,
+            plan: row.plan ?? null
           })
         );
       },

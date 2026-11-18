@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Language } from '../types';
 import { translations } from '../i18n/translations';
 import { useAccount } from '../account/AccountContext';
-import { daysLeft, isValidCode, isValidEmail, normalizeCode, subscriptionStatus } from '../account/access';
+import { daysLeft, isTrial, isValidCode, isValidEmail, normalizeCode, subscriptionStatus } from '../account/access';
 import { AccountError } from '../account/backend';
 import { FEATURE_NAMES } from '../config/plans';
 import { AdminLink, PaymentSection } from './PaymentSection';
@@ -126,6 +126,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
   const { access } = account;
   const status = subscriptionStatus(access.paidUntil);
   const locked = account.lockedFeature;
+  /** New accounts start with a free month */
+  const trialOffered = access.paywallEnabled && access.trialEnabled;
 
   return (
     <div
@@ -175,6 +177,11 @@ export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
                     'Введите email — мы пришлём одноразовый код для входа. Пароль не нужен.'
                   )}
                 </p>
+                {trialOffered && (
+                  <p className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                    {L('Жаңы аккаунт үчүн биринчи ай — акысыз.', 'Первый месяц для нового аккаунта — бесплатно.')}
+                  </p>
+                )}
                 <label htmlFor="accountEmail" className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
                   Email
                 </label>
@@ -262,7 +269,19 @@ export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
               {/* Subscription status */}
               <div className="p-3 rounded-md border border-slate-200 bg-slate-50 text-xs space-y-1">
                 <div className="font-bold uppercase tracking-wider text-slate-800">{L('Жазылуу', 'Подписка')}</div>
-                {status === 'active' ? (
+                {status === 'active' && isTrial(access.plan) ? (
+                  <p className="text-emerald-800">
+                    {lang === 'ky' ? (
+                      <>
+                        Акысыз сыноо мөөнөтү <strong>{formatDate(access.paidUntil!)}</strong> чейин ({daysLeft(access.paidUntil)} күн калды). Андан кийин — төмөнкү тарифтер боюнча.
+                      </>
+                    ) : (
+                      <>
+                        Бесплатный пробный месяц до <strong>{formatDate(access.paidUntil!)}</strong> (осталось {daysLeft(access.paidUntil)} дн.). Дальше — по тарифам ниже.
+                      </>
+                    )}
+                  </p>
+                ) : status === 'active' ? (
                   <p className="text-emerald-800">
                     {lang === 'ky' ? (
                       <>
@@ -276,7 +295,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({ lang }) => {
                   </p>
                 ) : status === 'expired' ? (
                   <p className="text-rose-700">
-                    {L('Жазылуу бүттү:', 'Подписка закончилась')} <strong>{formatDate(access.paidUntil!)}</strong>
+                    {isTrial(access.plan)
+                      ? L('Акысыз сыноо мөөнөтү бүттү:', 'Бесплатный пробный месяц закончился')
+                      : L('Жазылуу бүттү:', 'Подписка закончилась')}{' '}
+                    <strong>{formatDate(access.paidUntil!)}</strong>
                   </p>
                 ) : access.paywallEnabled ? (
                   <p className="text-slate-600">{L('Жазылуу жок.', 'Подписки нет.')}</p>

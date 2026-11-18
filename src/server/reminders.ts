@@ -10,6 +10,8 @@ export interface DueSubscription {
   email: string;
   /** As stored in the database: used again to mark the reminder as sent */
   paidUntil: string;
+  /** 'trial' for the free first month (TRIAL_PLAN in src/account/access.ts) */
+  plan?: string | null;
 }
 
 export interface ReminderMail {
@@ -45,23 +47,33 @@ export function buildReminderEmail(sub: DueSubscription, siteUrl: string, now: D
   const date = formatDate(sub.paidUntil);
   const left = Math.max(1, calendarDaysLeft(sub.paidUntil, now));
   const url = siteUrl.replace(/\/+$/, '');
+  const trial = sub.plan === 'trial';
 
   const ru = [
     'Здравствуйте!',
     '',
-    `Ваша подписка на «Калькулятор тендеров» действует до ${date} (осталось ${left} дн.).`,
-    `Чтобы продлить её, откройте ${url}, нажмите «Аккаунт», выберите срок и оплатите по QR-коду.`
+    trial
+      ? `Ваш бесплатный пробный месяц в «Калькуляторе тендеров» действует до ${date} (осталось ${left} дн.).`
+      : `Ваша подписка на «Калькулятор тендеров» действует до ${date} (осталось ${left} дн.).`,
+    trial
+      ? `Чтобы пользоваться дальше, откройте ${url}, нажмите «Аккаунт», выберите срок и оплатите по QR-коду.`
+      : `Чтобы продлить её, откройте ${url}, нажмите «Аккаунт», выберите срок и оплатите по QR-коду.`
   ];
   const ky = [
     'Саламатсызбы!',
     '',
-    `«Тендер калькулятору» жазылууңуз ${date} чейин жарактуу (${left} күн калды).`,
-    `Узартуу үчүн ${url} ачып, «Аккаунт» баскычын басыңыз, мөөнөттү тандап, QR-код аркылуу төлөңүз.`
+    trial
+      ? `«Тендер калькуляторундагы» акысыз сыноо айыңыз ${date} чейин жарактуу (${left} күн калды).`
+      : `«Тендер калькулятору» жазылууңуз ${date} чейин жарактуу (${left} күн калды).`,
+    trial
+      ? `Андан ары колдонуу үчүн ${url} ачып, «Аккаунт» баскычын басыңыз, мөөнөттү тандап, QR-код аркылуу төлөңүз.`
+      : `Узартуу үчүн ${url} ачып, «Аккаунт» баскычын басыңыз, мөөнөттү тандап, QR-код аркылуу төлөңүз.`
   ];
   const text = [...ru, '', '—', '', ...ky].join('\n');
 
   const paragraph = (line: string) => (line ? `<p style="margin:0 0 12px">${escapeHtml(line)}</p>` : '');
-  const button = `<p style="margin:16px 0"><a href="${escapeHtml(url)}" style="display:inline-block;padding:10px 18px;background:#059669;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Продлить подписку / Жазылууну узартуу</a></p>`;
+  const label = trial ? 'Выбрать тариф / Тариф тандоо' : 'Продлить подписку / Жазылууну узартуу';
+  const button = `<p style="margin:16px 0"><a href="${escapeHtml(url)}" style="display:inline-block;padding:10px 18px;background:#059669;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">${label}</a></p>`;
   const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#0f172a;max-width:560px">
 ${ru.map(paragraph).join('\n')}
 ${button}
@@ -69,7 +81,8 @@ ${button}
 ${ky.map(paragraph).join('\n')}
 </div>`;
 
-  return { to: sub.email, subject: `Подписка заканчивается ${date} · Калькулятор тендеров`, text, html };
+  const subject = trial ? `Бесплатный месяц заканчивается ${date}` : `Подписка заканчивается ${date}`;
+  return { to: sub.email, subject: `${subject} · Калькулятор тендеров`, text, html };
 }
 
 /**

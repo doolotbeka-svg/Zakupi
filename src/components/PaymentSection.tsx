@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Language } from '../types';
 import { useAccount } from '../account/AccountContext';
 import { PaymentRequest } from '../account/backend';
+import { isTrial, subscriptionStatus } from '../account/access';
 import { PLANS, Plan } from '../config/plans';
 import { QR_PAYMENT } from '../config/payment';
 import { AlertCircle, Check, Copy, Download, ExternalLink, QrCode, ShieldCheck } from 'lucide-react';
@@ -217,6 +218,14 @@ export const PaymentSection: React.FC<{ lang: Language }> = ({ lang }) => {
   return (
     <div className="space-y-2">
       <div className="text-xs font-bold uppercase tracking-wider text-slate-800">{L('Тарифтер', 'Тарифы')}</div>
+      {isTrial(account.access.plan) && subscriptionStatus(account.access.paidUntil) === 'active' && (
+        <p className="text-xs text-slate-600">
+          {L(
+            'Азыр төлөсөңүз, төлөнгөн айлар акысыз айдын аягынан кийин кошулат.',
+            'Если оплатить сейчас, оплаченные месяцы добавятся после окончания бесплатного месяца.'
+          )}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={L('Тарифтер', 'Тарифы')}>
         {plans.map(plan => {
           const isSelected = plan.id === selected;

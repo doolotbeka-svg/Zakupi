@@ -54,6 +54,18 @@ describe('ознакомительная страница', () => {
     expect(example.textContent).toContain('23.68%');
   });
 
+  it('ознакомительная страница сообщает о бесплатном первом месяце, только когда он включён', async () => {
+    backend.access = { ...backend.access, loginRequired: true, paywallEnabled: true, trialEnabled: true };
+    const { unmount } = renderRoot();
+    expect(await screen.findByText('Первый месяц — бесплатно')).toBeTruthy();
+    unmount();
+
+    backend.access = { ...backend.access, trialEnabled: false };
+    renderRoot();
+    await screen.findByRole('heading', { name: 'Рассчитайте выгоду тендера до подачи заявки' });
+    expect(screen.queryByText('Первый месяц — бесплатно')).toBeNull();
+  });
+
   it('после входа с ознакомительной страницы открывается калькулятор, окно входа закрывается', async () => {
     backend.access = { ...backend.access, loginRequired: true };
     const user = userEvent.setup();

@@ -54,7 +54,7 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   backend = new FakeAccountBackend();
   backend.admins.add('admin@example.com');
-  backend.access = { paywallEnabled: true, loginRequired: true, paidUntil: null, plan: null };
+  backend.access = { paywallEnabled: true, loginRequired: true, trialEnabled: false, paidUntil: null, plan: null };
   backend.adminPassword = ADMIN_PASSWORD;
 });
 
@@ -215,6 +215,12 @@ describe('админ-панель: тарифы и настройки', () => {
     const login = screen.getByText('Вход обязателен').closest('div.rounded-lg')!;
     await user.click(within(login as HTMLElement).getByRole('button', { name: 'Выключить' }));
     await waitFor(() => expect(backend.access.loginRequired).toBe(false));
+
+    const trial = screen.getByText('Первый месяц бесплатно').closest('div.rounded-lg')!;
+    expect(trial.textContent).toContain('выключено');
+    await user.click(within(trial as HTMLElement).getByRole('button', { name: 'Включить' }));
+    await waitFor(() => expect(backend.access.trialEnabled).toBe(true));
+    expect(window.confirm).toHaveBeenCalledWith('Включить бесплатный первый месяц для новых аккаунтов?');
   });
 });
 
