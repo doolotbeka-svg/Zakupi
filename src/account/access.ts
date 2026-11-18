@@ -6,12 +6,18 @@ export interface AccessInfo {
   paywallEnabled: boolean;
   /** Signed-out visitors see only the introduction page until they log in */
   loginRequired: boolean;
+  /** New accounts get the first month free (only matters while paid access is on) */
+  trialEnabled: boolean;
   /** ISO date the subscription is paid until, or null */
   paidUntil: string | null;
   plan: string | null;
 }
 
-export const OPEN_ACCESS: AccessInfo = { paywallEnabled: false, loginRequired: false, paidUntil: null, plan: null };
+export const OPEN_ACCESS: AccessInfo = { paywallEnabled: false, loginRequired: false, trialEnabled: false, paidUntil: null, plan: null };
+
+/** Plan name of the free first month (set by the database function start_trial) */
+export const TRIAL_PLAN = 'trial';
+export const isTrial = (plan: string | null) => plan === TRIAL_PLAN;
 
 export type SubscriptionStatus = 'active' | 'expired' | 'none';
 

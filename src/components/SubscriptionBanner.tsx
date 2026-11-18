@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Language } from '../types';
 import { useAccount } from '../account/AccountContext';
-import { daysLeft, subscriptionStatus } from '../account/access';
+import { daysLeft, isTrial, subscriptionStatus } from '../account/access';
 import { Clock, X } from 'lucide-react';
 
 /** Days before the end of a subscription when the reminder appears */
@@ -32,6 +32,7 @@ export const SubscriptionBanner: React.FC<{ lang: Language }> = ({ lang }) => {
   const left = daysLeft(paidUntil);
   const endingSoon = status === 'active' && left <= REMINDER_DAYS;
   const ended = status === 'expired' && account.access.paywallEnabled;
+  const trial = isTrial(account.access.plan);
   // Hidden for this end date once closed; a new end date shows it again
   if ((!endingSoon && !ended) || dismissed === paidUntil) return null;
 
@@ -49,19 +50,26 @@ export const SubscriptionBanner: React.FC<{ lang: Language }> = ({ lang }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-3">
         <Clock className={`w-4 h-4 shrink-0 ${ended ? 'text-rose-600' : 'text-amber-600'}`} />
         <span className="flex-1">
-          {ended
-            ? L(`Жазылуу ${formatDate(paidUntil)} бүттү.`, `Подписка закончилась ${formatDate(paidUntil)}.`)
-            : L(
-                `Жазылуу ${left} күндөн кийин бүтөт (${formatDate(paidUntil)} чейин).`,
-                `Подписка заканчивается через ${left} дн. (до ${formatDate(paidUntil)}).`
-              )}
+          {trial
+            ? ended
+              ? L(`Акысыз сыноо мөөнөтү ${formatDate(paidUntil)} бүттү.`, `Бесплатный пробный месяц закончился ${formatDate(paidUntil)}.`)
+              : L(
+                  `Акысыз сыноо мөөнөтү ${left} күндөн кийин бүтөт (${formatDate(paidUntil)} чейин).`,
+                  `Бесплатный пробный месяц заканчивается через ${left} дн. (до ${formatDate(paidUntil)}).`
+                )
+            : ended
+              ? L(`Жазылуу ${formatDate(paidUntil)} бүттү.`, `Подписка закончилась ${formatDate(paidUntil)}.`)
+              : L(
+                  `Жазылуу ${left} күндөн кийин бүтөт (${formatDate(paidUntil)} чейин).`,
+                  `Подписка заканчивается через ${left} дн. (до ${formatDate(paidUntil)}).`
+                )}
         </span>
         <button
           type="button"
           onClick={() => account.openAccount()}
           className={`px-3 py-1 rounded-md font-semibold text-white cursor-pointer shrink-0 ${ended ? 'bg-rose-600 hover:bg-rose-500' : 'bg-amber-600 hover:bg-amber-500'}`}
         >
-          {L('Узартуу', 'Продлить')}
+          {trial ? L('Тариф тандоо', 'Выбрать тариф') : L('Узартуу', 'Продлить')}
         </button>
         <button
           type="button"

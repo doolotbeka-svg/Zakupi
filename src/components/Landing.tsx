@@ -35,6 +35,7 @@ export const Landing: React.FC = () => {
   const account = useAccount();
   const [lang, setLang] = useState<Language>(readLang);
   const L = (ky: string, ru: string) => (lang === 'ky' ? ky : ru);
+  const trialOffered = account.access.paywallEnabled && account.access.trialEnabled;
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -172,6 +173,9 @@ export const Landing: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <LoginButton large />
               <span className="text-xs text-slate-500">
+                {trialOffered && (
+                  <strong className="block text-emerald-700 text-sm">{L('Биринчи ай — акысыз', 'Первый месяц — бесплатно')}</strong>
+                )}
                 {L('Каттоо бир мүнөт: email жана каттагы код.', 'Регистрация за минуту: email и код из письма.')}
               </span>
             </div>

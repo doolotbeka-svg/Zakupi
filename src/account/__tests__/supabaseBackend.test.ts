@@ -38,7 +38,7 @@ function fakeQuery(result: unknown, calls: unknown[][]) {
   return query;
 }
 
-function fakeClient(tables: Record<string, unknown> = {}) {
+function fakeClient(tables: Record<string, unknown> = {}, rpcs: Record<string, unknown> = {}) {
   const calls: unknown[][] = [];
   const auth = {
     signInWithOtp: vi.fn(async () => ({ data: {}, error: null })),
@@ -52,6 +52,10 @@ function fakeClient(tables: Record<string, unknown> = {}) {
     from: (table: string) => {
       calls.push(['from', table]);
       return fakeQuery(tables[table] ?? { data: null, error: null }, calls);
+    },
+    rpc: async (name: string, ...args: unknown[]) => {
+      calls.push(['rpc', name, ...args]);
+      return rpcs[name] ?? { data: null, error: null };
     }
   };
   return { client: client as unknown as SupabaseClient, auth, calls };
@@ -111,42 +115,70 @@ describe('createSupabaseBackend', () => {
     await expect(createSupabaseBackend('u', 'k', client).verifyCode('a@b.kg', '000000')).rejects.toMatchObject({ kind: 'invalid_code' });
   });
 
-  it('читает переключатель и подписку', async () => {
-    const { client } = fakeClient({
-      app_settings: { data: { paywall_enabled: true, login_required: true }, error: null },
+  it('читает переключатели и подписку', async () => {
+    const { client, calls } = fakeClient({
+      app_settings: { data: { paywall_enabled: true, login_required: true, trial_enabled: true }, error: null },
       subscriptions: { data: { paid_until: '2026-12-11T00:00:00Z', plan: '1m' }, error: null }
     });
     const backend = createSupabaseBackend('u', 'k', client);
     expect(await backend.getAccess({ id: 'u1', email: 'a@b.kg' })).toEqual({
       paywallEnabled: true,
       loginRequired: true,
+      trialEnabled: true,
       paidUntil: '2026-12-11T00:00:00Z',
       plan: '1m'
     });
-    expect(await backend.getAccess(null)).toEqual({ paywallEnabled: true, loginRequired: true, paidUntil: null, plan: null });
+    expect(await backend.getAccess(null)).toEqual({ paywallEnabled: true, loginRequired: true, trialEnabled: true, paidUntil: null, plan: null });
+    // has a subscription: no attempt to start a free month
+    expect(calls.some(c => c[0] === 'rpc')).toBe(false);
   });
 
-  it('без колонки login_required (старая схема базы) считает вход необязательным', async () => {
-    const calls: unknown[][] = [];
-    const responses = [
-      { data: null, error: { code: '42703', message: 'column app_settings.login_required does not exist' } },
-      { data: { paywall_enabled: false }, error: null }
-    ];
-    const client = {
-      auth: {},
-      from: (table: string) => {
-        calls.push(['from', table]);
-        return fakeQuery(responses.shift(), calls);
-      }
-    } as unknown as SupabaseClient;
-
+  it('в старой базе без новых колонок считает переключатели выключенными', async () => {
+    const { client } = fakeClient({ app_settings: { data: { paywall_enabled: false }, error: null } });
     expect(await createSupabaseBackend('u', 'k', client).getAccess(null)).toEqual({
       paywallEnabled: false,
       loginRequired: false,
+      trialEnabled: false,
       paidUntil: null,
       plan: null
     });
-    expect(calls.filter(c => c[0] === 'select').map(c => c[1])).toEqual(['paywall_enabled, login_required', 'paywall_enabled']);
+  });
+
+  describe('бесплатный первый месяц', () => {
+    const settings = { data: { paywall_enabled: true, login_required: true, trial_enabled: true }, error: null };
+    const user = { id: 'u1', email: 'a@b.kg' };
+
+    it('без подписки просит базу начать пробный месяц', async () => {
+      const { client, calls } = fakeClient({ app_settings: settings }, { start_trial: { data: '2026-12-18T10:00:00Z', error: null } });
+      expect(await createSupabaseBackend('u', 'k', client).getAccess(user)).toMatchObject({
+        paidUntil: '2026-12-18T10:00:00Z',
+        plan: 'trial'
+      });
+      expect(calls).toContainEqual(['rpc', 'start_trial']);
+    });
+
+    it('если база отказала (уже был или выключен), подписки нет', async () => {
+      const { client } = fakeClient({ app_settings: settings }, { start_trial: { data: null, error: null } });
+      expect(await createSupabaseBackend('u', 'k', client).getAccess(user)).toMatchObject({ paidUntil: null, plan: null });
+    });
+
+    it('ошибка базы (миграция ещё не запущена) не ломает вход', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { client } = fakeClient({ app_settings: settings }, { start_trial: { data: null, error: { code: 'PGRST202', message: 'not found' } } });
+      expect(await createSupabaseBackend('u', 'k', client).getAccess(user)).toMatchObject({ paidUntil: null, plan: null });
+      errorSpy.mockRestore();
+    });
+
+    it('не просит, когда пробный месяц или платный доступ выключены', async () => {
+      for (const data of [
+        { paywall_enabled: true, trial_enabled: false },
+        { paywall_enabled: false, trial_enabled: true }
+      ]) {
+        const { client, calls } = fakeClient({ app_settings: { data, error: null } });
+        await createSupabaseBackend('u', 'k', client).getAccess(user);
+        expect(calls.some(c => c[0] === 'rpc')).toBe(false);
+      }
+    });
   });
 
   it('сохраняет, читает и удаляет расчёты только своего пользователя', async () => {

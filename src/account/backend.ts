@@ -103,7 +103,7 @@ export interface AccountBackend {
   approvePayment(token: string, id: string): Promise<string>;
   rejectPayment(token: string, id: string): Promise<void>;
   /** Site switches; undefined keeps the current value */
-  updateSettings(token: string, changes: { paywallEnabled?: boolean; loginRequired?: boolean }): Promise<void>;
+  updateSettings(token: string, changes: { paywallEnabled?: boolean; loginRequired?: boolean; trialEnabled?: boolean }): Promise<void>;
   adminListPlans(token: string): Promise<AdminPlan[]>;
   updatePlan(token: string, id: string, priceKgs: number, active: boolean): Promise<void>;
   /** Users with subscriptions, newest first; optional search by email */

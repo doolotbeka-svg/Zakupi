@@ -121,7 +121,7 @@ describe('платный доступ', () => {
   });
 
   it('при включённом переключателе без подписки предлагает войти и оформить подписку', async () => {
-    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: null, plan: null };
+    backend.access = { paywallEnabled: true, loginRequired: false, trialEnabled: false, paidUntil: null, plan: null };
     const user = await renderApp();
 
     await user.click(screen.getByRole('button', { name: 'Печать отчета / PDF' }));
@@ -135,7 +135,7 @@ describe('платный доступ', () => {
   });
 
   it('после входа без подписки показывает тарифы с ценами', async () => {
-    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: null, plan: null };
+    backend.access = { paywallEnabled: true, loginRequired: false, trialEnabled: false, paidUntil: null, plan: null };
     const user = await renderApp();
     const dialog = await signIn(user);
 
@@ -151,7 +151,7 @@ describe('платный доступ', () => {
   });
 
   it('с активной подпиской платные функции открываются', async () => {
-    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: inAMonth(), plan: 'manual' };
+    backend.access = { paywallEnabled: true, loginRequired: false, trialEnabled: false, paidUntil: inAMonth(), plan: 'manual' };
     const user = await renderApp();
     const dialog = await signIn(user);
     expect(within(dialog).getByText(/Активна до/)).toBeTruthy();
@@ -159,6 +159,59 @@ describe('платный доступ', () => {
 
     await user.click(screen.getByRole('button', { name: 'Печать отчета / PDF' }));
     expect(screen.getByRole('dialog').textContent).toContain('КАРТА РЕНТАБЕЛЬНОСТИ ТЕНДЕРА');
+  });
+});
+
+describe('бесплатный первый месяц', () => {
+  const TRIAL = { paywallEnabled: true, loginRequired: false, trialEnabled: true, paidUntil: null, plan: null };
+
+  it('новый аккаунт сразу получает месяц доступа, платные функции открыты', async () => {
+    backend.access = { ...TRIAL };
+    const user = await renderApp();
+    await user.click(screen.getByRole('button', { name: 'Войти' }));
+    expect(screen.getByRole('dialog', { name: 'Аккаунт' }).textContent).toContain('Первый месяц для нового аккаунта — бесплатно.');
+    await user.keyboard('{Escape}');
+
+    const dialog = await signIn(user);
+    expect(within(dialog).getByText(/Бесплатный пробный месяц до/).textContent).toMatch(/осталось 3[01] дн\./);
+    expect(within(dialog).getByText(/оплаченные месяцы добавятся после окончания бесплатного месяца/)).toBeTruthy();
+    expect(within(dialog).getAllByRole('radio')).toHaveLength(4);
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Печать отчета / PDF' }));
+    expect(screen.getByRole('dialog').textContent).toContain('КАРТА РЕНТАБЕЛЬНОСТИ ТЕНДЕРА');
+  });
+
+  it('второй раз пробный месяц не выдаётся', async () => {
+    backend.access = { ...TRIAL };
+    backend.trialUsed.add('user-buyer@example.com');
+    const user = await renderApp();
+    const dialog = await signIn(user);
+    expect(within(dialog).getByText('Подписки нет.')).toBeTruthy();
+  });
+
+  it('при выключенном пробном месяце о нём не говорится', async () => {
+    backend.access = { ...TRIAL, trialEnabled: false };
+    const user = await renderApp();
+    await user.click(screen.getByRole('button', { name: 'Войти' }));
+    expect(screen.getByRole('dialog', { name: 'Аккаунт' }).textContent).not.toContain('бесплатно');
+  });
+
+  it('за 3 дня до конца пробного месяца плашка предлагает выбрать тариф', async () => {
+    const soon = new Date(Date.now() + 2 * 86_400_000 - 60_000).toISOString();
+    backend.access = { ...TRIAL, paidUntil: soon, plan: 'trial' };
+    const user = await renderApp();
+    const dialog = await signIn(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }));
+    const banner = await screen.findByText(/Бесплатный пробный месяц заканчивается через 2 дн\./);
+    expect(within(banner.parentElement!).getByRole('button', { name: 'Выбрать тариф' })).toBeTruthy();
+  });
+
+  it('после пробного месяца сообщает, что он закончился', async () => {
+    backend.access = { ...TRIAL, paidUntil: new Date(Date.now() - 86_400_000).toISOString(), plan: 'trial' };
+    const user = await renderApp();
+    const dialog = await signIn(user);
+    expect(within(dialog).getByText(/Бесплатный пробный месяц закончился/)).toBeTruthy();
   });
 });
 
@@ -223,7 +276,7 @@ describe('сохранённые расчёты в аккаунте', () => {
 });
 
 describe('оплата по QR', () => {
-  const PAYWALL = { paywallEnabled: true, loginRequired: false, paidUntil: null, plan: null };
+  const PAYWALL = { paywallEnabled: true, loginRequired: false, trialEnabled: false, paidUntil: null, plan: null };
 
   const startPayment = async (user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement, plan = '3 месяца') => {
     await user.click(within(dialog).getByRole('radio', { name: new RegExp(plan) }));
@@ -301,7 +354,7 @@ describe('напоминание об окончании подписки на �
   afterEach(() => sessionStorage.clear());
 
   it('за 3 дня до конца показывает плашку с кнопкой «Продлить»', async () => {
-    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: inDays(2), plan: '1m' };
+    backend.access = { paywallEnabled: true, loginRequired: false, trialEnabled: false, paidUntil: inDays(2), plan: '1m' };
     const user = await renderApp();
     expect(screen.queryByText(/Подписка заканчивается/)).toBeNull();
 
@@ -317,7 +370,7 @@ describe('напоминание об окончании подписки на �
   });
 
   it('за неделю до конца плашки нет', async () => {
-    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: inDays(7), plan: '1m' };
+    backend.access = { paywallEnabled: true, loginRequired: false, trialEnabled: false, paidUntil: inDays(7), plan: '1m' };
     const user = await renderApp();
     const dialog = await signIn(user);
     await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }));
@@ -325,7 +378,7 @@ describe('напоминание об окончании подписки на �
   });
 
   it('после окончания подписки при платном доступе сообщает, что она закончилась', async () => {
-    backend.access = { paywallEnabled: true, loginRequired: false, paidUntil: inDays(-5), plan: '1m' };
+    backend.access = { paywallEnabled: true, loginRequired: false, trialEnabled: false, paidUntil: inDays(-5), plan: '1m' };
     const user = await renderApp();
     const dialog = await signIn(user);
     await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }));

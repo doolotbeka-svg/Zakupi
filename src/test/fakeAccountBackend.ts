@@ -1,4 +1,4 @@
-import { AccessInfo, OPEN_ACCESS } from '../account/access';
+import { AccessInfo, OPEN_ACCESS, TRIAL_PLAN } from '../account/access';
 import { AccountBackend, AccountError, AccountUser, AdminPlan, AdminUser, PaymentRequest } from '../account/backend';
 import { PLANS, Plan } from '../config/plans';
 import { SavedTender } from '../types';
@@ -61,7 +61,17 @@ export class FakeAccountBackend implements AccountBackend {
     if (this.failAccess) throw new AccountError('network');
     if (!user) return { ...this.access, paidUntil: null, plan: null };
     const granted = this.paidUntilByUser.get(user.id);
-    return granted ? { ...this.access, paidUntil: granted, plan: 'paid' } : { ...this.access };
+    if (granted) return { ...this.access, paidUntil: granted, plan: this.planByUser.get(user.id) ?? 'paid' };
+    // Like the database function start_trial: one free month per account, while both switches are on
+    if (this.access.paywallEnabled && this.access.trialEnabled && !this.access.paidUntil && !this.trialUsed.has(user.id)) {
+      const until = new Date();
+      until.setMonth(until.getMonth() + 1);
+      this.trialUsed.add(user.id);
+      this.paidUntilByUser.set(user.id, until.toISOString());
+      this.planByUser.set(user.id, TRIAL_PLAN);
+      return { ...this.access, paidUntil: until.toISOString(), plan: TRIAL_PLAN };
+    }
+    return { ...this.access };
   }
 
   private hasAccess() {
@@ -215,6 +225,7 @@ export class FakeAccountBackend implements AccountBackend {
     const from = this.access.paidUntil && Date.parse(this.access.paidUntil) > Date.now() ? new Date(this.access.paidUntil) : new Date();
     from.setMonth(from.getMonth() + payment.months);
     this.paidUntilByUser.set(payment.userId, from.toISOString());
+    this.planByUser.set(payment.userId, payment.plan);
     return from.toISOString();
   }
 
@@ -227,13 +238,16 @@ export class FakeAccountBackend implements AccountBackend {
 
   /** Subscriptions granted by approvals, per user */
   paidUntilByUser = new Map<string, string>();
+  planByUser = new Map<string, string>();
+  trialUsed = new Set<string>();
 
-  async updateSettings(token: string, changes: { paywallEnabled?: boolean; loginRequired?: boolean }) {
+  async updateSettings(token: string, changes: { paywallEnabled?: boolean; loginRequired?: boolean; trialEnabled?: boolean }) {
     await this.requireSession(token);
     this.access = {
       ...this.access,
       paywallEnabled: changes.paywallEnabled ?? this.access.paywallEnabled,
-      loginRequired: changes.loginRequired ?? this.access.loginRequired
+      loginRequired: changes.loginRequired ?? this.access.loginRequired,
+      trialEnabled: changes.trialEnabled ?? this.access.trialEnabled
     };
   }
 

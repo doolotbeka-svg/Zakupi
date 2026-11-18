@@ -25,6 +25,15 @@ describe('письмо-напоминание', () => {
     expect(left('2026-11-12T17:00:00Z', '2026-11-12T03:00:00Z')).toBe('1');
   });
 
+  it('для бесплатного месяца пишет про пробный месяц и выбор тарифа', () => {
+    const mail = buildReminderEmail({ ...sub, plan: 'trial' }, 'https://zakupi.vercel.app', now);
+    expect(mail.subject).toBe('Бесплатный месяц заканчивается 14.11.2026 · Калькулятор тендеров');
+    expect(mail.text).toContain('Ваш бесплатный пробный месяц в «Калькуляторе тендеров» действует до 14.11.2026 (осталось 2 дн.)');
+    expect(mail.text).toContain('акысыз сыноо айыңыз 14.11.2026 чейин жарактуу');
+    expect(mail.html).toContain('Выбрать тариф / Тариф тандоо');
+    expect(buildReminderEmail({ ...sub, plan: '3m' }, 'https://x', now).subject).toMatch(/^Подписка заканчивается/);
+  });
+
   it('дату показывает по времени Бишкека', () => {
     // 20:00 UTC 14.11 = 02:00 15.11 в Бишкеке
     expect(buildReminderEmail({ ...sub, paidUntil: '2026-11-14T20:00:00Z' }, 'https://x', now).subject).toContain('15.11.2026');
